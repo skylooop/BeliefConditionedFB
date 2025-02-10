@@ -1,0 +1,2 @@
+# pointmaze-medium-explore-v0
+python data_gen_scripts/generate_locomaze.py --env_name=pointmaze-medium-v0 --save_path=aux_data/pointmaze-medium-explore-v0 --dataset_type=explore --num_episodes=10000 --max_episode_steps=501 --noise=1.0 --restore_path=experts/ant --restore_epoch=400000
