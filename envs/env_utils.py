@@ -85,7 +85,7 @@ class FrameStackWrapper(gymnasium.Wrapper):
         ob, reward, terminated, truncated, info = self.env.step(action)
         self.frames.append(ob)
         return self.get_observation(), reward, terminated, truncated, info
-
+    
 def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5):
     """Make OGBench environment and datasets.
 

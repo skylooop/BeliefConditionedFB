@@ -1,10 +1,13 @@
 from typing import Any, Optional, Sequence
 
+import jax
+import flax
 import distrax
 import flax.linen as nn
 import jax.numpy as jnp
 
 from typing import Any, Optional, Sequence
+from jaxtyping import ArrayLike
 
 def default_init(scale=1.0):
     """Default kernel initializer."""
@@ -23,7 +26,21 @@ def ensemblize(cls, num_qs, out_axes=0, **kwargs):
         **kwargs,
     )
 
-
+class RadialBasisFeatures(nn.Module):
+    sigma: float = 0.1
+    number_of_gaussians: int = 10
+    
+    def setup(self):
+        self.centers = jnp.array([(x, y) for x in jnp.linspace(0, 1, self.number_of_gaussians)
+                              for y in jnp.linspace(0, 1, self.number_of_gaussians)])
+    
+    def __call__(self, x):
+        sx, sy = x[:2]
+        distances = jnp.sum((jnp.array([sx, sy]) - self.centers) ** 2, axis=1)
+        radial_xy = jnp.exp(-distances / self.sigma)
+        phi = jnp.concatenate([radial_xy, x[2:], jnp.array([1.0])])  # Add bias term
+        return phi
+    
 class Identity(nn.Module):
     """Identity layer."""
 
@@ -214,7 +231,6 @@ class GCActor(nn.Module):
 
         return distribution
 
-
 class GCDiscreteActor(nn.Module):
     """Goal-conditioned actor for discrete actions.
 
@@ -229,9 +245,10 @@ class GCDiscreteActor(nn.Module):
     action_dim: int
     final_fc_init_scale: float = 1e-2
     gc_encoder: nn.Module = None
-
+    layer_norm: bool = False
+    
     def setup(self):
-        self.actor_net = MLP(self.hidden_dims, activate_final=True)
+        self.actor_net = MLP(self.hidden_dims, activate_final=True, layer_norm=self.layer_norm)
         self.logit_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
 
     def __call__(
@@ -264,6 +281,62 @@ class GCDiscreteActor(nn.Module):
 
         return distribution
 
+class FBValue(nn.Module):
+    hidden_dims: Sequence[int]
+    layer_norm: bool = False
+    grid_world: bool = True # for grid world env: (x, y) scaled to [0, 1] and then radial features applied
+    
+    def setup(self):
+        mlp_module = MLP
+        self.radial_features_module = RadialBasisFeatures()
+        self.forward_map = mlp_module((*self.hidden_dims, ), activate_final=False, layer_norm=self.layer_norm)
+        self.backward_map = mlp_module((*self.hidden_dims, ), activate_final=False, layer_norm=self.layer_norm)
+    
+    def __call__(self, observations, actions=None, latent_z=None, goal=None, info=False):
+        if self.grid_world:
+            observations = self.radial_features_module(observations)
+            goal = self.radial_features_module(goal)
+            
+        inputs = [observations]
+        if actions is not None:
+            inputs.append(actions)
+            inputs.append(latent_z)
+        
+        inputs = jnp.concatenate(inputs, axis=-1)
+        
+        forward_map_values = self.forward_map(inputs)
+        backward_map_values = self.backward_map(goal) 
+        v = forward_map_values @ backward_map_values.T
+        if info:
+            return v, forward_map_values, backward_map_values
+        return v
+
+class FBDiscreteActor(nn.Module):
+    hidden_dims: Sequence[int]
+    action_dim: int
+    final_fc_init_scale: float = 1e-2
+    layer_norm: bool = False
+    grid_world: bool = True
+    
+    def setup(self):
+        self.radial_features_module = RadialBasisFeatures
+        self.actor_net = MLP(self.hidden_dims, activate_final=True, layer_norm=self.layer_norm)
+        self.logit_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
+
+    def __call__(
+        self,
+        observations,
+        z_latent,
+        temperature=1.0,
+    ):
+        inputs = jnp.concatenate([observations, z_latent], axis=-1)
+        outputs = self.actor_net(inputs)
+
+        logits = self.logit_net(outputs)
+
+        distribution = distrax.Categorical(logits=logits / jnp.maximum(1e-6, temperature))
+
+        return distribution
 
 class GCValue(nn.Module):
     """Goal-conditioned value/critic function.

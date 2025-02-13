@@ -49,7 +49,7 @@ flags.DEFINE_integer('video_frame_skip', 3, 'Frame skip for videos.')
 flags.DEFINE_float('p_aug', None, 'Probability of applying image augmentation.')
 flags.DEFINE_integer('frame_stack', None, 'Number of frames to stack.')
 
-config_flags.DEFINE_config_file('agent', 'agents/fb.py', lock_config=False)
+config_flags.DEFINE_config_file('agent', 'agents/rnd.py', lock_config=False)
 
 
 

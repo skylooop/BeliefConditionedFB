@@ -22,7 +22,7 @@ MAZE = np.array(
         [" ", " ", " ", " ", " ", " ", " ", " ", " ", " ", " ", " ", " "],
         [" ", " ", " ", " ", " ", " ", "2", " ", " ", " ", " ", " ", " "],
         [" ", " ", " ", " ", " ", " ", "X", " ", " ", " ", " ", " ", " "],
-        ["_", " ", " ", " ", " ", " ", "X", "3", " ", " ", " ", " ", "1"],
+        [" ", " ", " ", " ", " ", " ", "X", "3", " ", " ", " ", " ", "1"],
     ]
 )
 BLUE = (0, 0, 255)
@@ -102,37 +102,44 @@ class FourRoom(gym.Env, EzPickle):
         self.initial = []
         self.occupied = set()
         self.shape_ids = dict()
+        self.state_list = []
         for c in range(self.width):
             for r in range(self.height):
                 if maze[r, c] == "G":
                     self.goal = (r, c)
-                elif maze[r, c] == "_":
-                    self.initial.append((r, c))
+                    self.state_list.append((r, c))
+                # elif maze[r, c] == "_":
+                #     self.initial.append((r, c))
                 elif maze[r, c] == "X":
                     self.occupied.add((r, c))
                 elif maze[r, c] in {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}:
                     self.shape_ids[(r, c)] = len(self.shape_ids)
-
+                    self.state_list.append((r, c))
+                else:
+                    self.state_list.append((r, c))
+        
         self.action_space = Discrete(4)
         self.observation_space = Box(
             low=np.zeros(2 + len(self.shape_ids)),
             high=len(self.maze) * np.ones(2 + len(self.shape_ids)),
-            dtype=np.int32,
+            dtype=np.float32,
         )
         self.reward_space = Box(low=0, high=1, shape=(3,))
         self.reward_dim = 3
 
     def state_to_array(self, state):
         s = [element for tupl in state for element in tupl]
-        return np.array(s, dtype=np.int32)
+        return np.array(s, dtype=np.float32)
 
     def reset(self, seed=None, **kwargs):
         super().reset(seed=seed)
 
+        init_state = kwargs.get("init_state")
         self.state = (
-            random.choice(self.initial),
+            random.choice(self.state_list) if init_state is None else init_state,
             tuple(0 for _ in range(len(self.shape_ids))),
         )
+        self.initial = self.state
         if self.render_mode == "human":
             self.render()
         return self.state_to_array(self.state), {}
@@ -233,7 +240,6 @@ class FourRoom(gym.Env, EzPickle):
         return phi
 
     def render(self):
-        # The size of a single grid square in pixels
         pix_square_size = self.window_size // 13
 
         if self.window is None and self.render_mode is not None:
