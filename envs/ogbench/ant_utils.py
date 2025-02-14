@@ -48,12 +48,18 @@ class MazeVizWrapper(gymnasium.Wrapper):
                     polyg.append(sharply_pol)
                     
                     ax.add_patch(rect)
-                    
-        ax.set_xlim(0 - S /2 + 0.6 * S - torso_x, len(self.unwrapped.maze_map[0]) * S - torso_x - S/2 - S * 0.6)
-        ax.set_ylim(0 - S/2 + 0.6 * S - torso_y, len(self.unwrapped.maze_map) * S - torso_y - S/2 - S * 0.6)
+        
+        self.xlims = (0 - S /2 + 0.6 * S - torso_x, len(self.unwrapped.maze_map[0]) * S - torso_x - S/2 - S * 0.6)
+        self.ylims = (0 - S/2 + 0.6 * S - torso_y, len(self.unwrapped.maze_map) * S - torso_y - S/2 - S * 0.6)
+        ax.set_xlim(*self.xlims)
+        ax.set_ylim(*self.ylims)
         # ax.axis('off')
         return polyg
 
+    @property
+    def get_env_limits(self):
+        return self.xlims, self.ylims
+    
     def draw_tsne(polygons, sample_obs):
         coll_pol = GeometryCollection(polygons)
         test_obs = []
