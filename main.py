@@ -62,13 +62,21 @@ def main(_):
     
     # setup_wandb(project='OGBench', group=FLAGS.run_group, name=exp_name)
     
+    dataset_class = {
+        'GCDataset': GCDataset,
+        # 'HGCDataset': HGCDataset,
+    }[config['dataset_class']]
+    train_dataset = dataset_class(Dataset.create(**train_dataset), config)
+    if val_dataset is not None:
+        val_dataset = dataset_class(Dataset.create(**val_dataset), config)
+    
     random.seed(FLAGS.seed)
     np.random.seed(FLAGS.seed)
     
     example_batch = train_dataset.sample(1)
     if config['discrete']:
         example_batch['actions'] = np.full_like(example_batch['actions'], env.action_space.n - 1)
-    
+
     agent_class = agents[config['agent_name']]
     agent = agent_class.create(
         FLAGS.seed,
@@ -82,7 +90,7 @@ def main(_):
     first_time = time.time()
     last_time = time.time()
 
-    for step in tqdm(range(1, FLAGS.train_steps + 1), colour='green', dynamic_ncols=True):
+    for step in tqdm(range(1, FLAGS.train_steps + 1), colour='green', dynamic_ncols=True, position=0, leave=True):
         batch = train_dataset.sample(config['batch_size'])
         agent, update_info = agent.update(batch)
         
@@ -107,7 +115,7 @@ def main(_):
             if 'ogbench' in FLAGS.env_name:
                 task_infos = env.unwrapped.task_infos if hasattr(env.unwrapped, 'task_infos') else env.task_infos
                 num_tasks = FLAGS.eval_tasks if FLAGS.eval_tasks is not None else len(task_infos)
-                for task_id in tqdm.trange(1, num_tasks + 1):
+                for task_id in tqdm(range(1, num_tasks + 1), leave=False, position=1, colour='blue'):
                     task_name = task_infos[task_id - 1]['task_name']
                     eval_info, trajs, cur_renders = evaluate(
                         agent=agent,

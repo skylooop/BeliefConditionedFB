@@ -17,54 +17,50 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
     config: Any = nonpytree_field()
 
     def fb_loss(self, batch, grad_params, rng):
-        """Compute the SAC critic loss."""
         rng, sample_rng = jax.random.split(rng)
+        
+        # Target M
         z_latent = self.sample_z(key=sample_rng, batch_size=self.config['batch_size'], latent_dim=self.config['z_dim'])
-        
         next_dist = self.network.select('actor')(batch['next_observations'], z_latent)
-        next_actions, next_log_probs = next_dist.sample_and_log_prob(seed=sample_rng)
-
-        next_fb = self.network.select('target_fb')(batch['next_observations'], next_actions)
-        # Add gcdataset
-        q = self.network.select('critic')(batch['observations'], batch['actions'], params=grad_params)
+        next_actions = next_dist.sample(seed=sample_rng)
+        target_next_fb, target_f, target_b = self.network.select('target_fb')(batch['next_observations'], next_actions, z_latent, batch['fb_goals'], info=True)
         
-        critic_loss = jnp.square(q - target_q).mean()
+        # Cur M
+        fb_M, cur_f, cur_b = self.network.select('fb')(batch['observations'], batch['actions'], z_latent, batch['fb_goals'], info=True, params=grad_params)
+        
+        diff = fb_M - self.config['discount']*target_next_fb
+        I = jnp.eye(*fb_M.shape, dtype=bool)
+        off_diagonal = ~I
 
-        return critic_loss, {
-            'critic_loss': critic_loss,
+        fb_off_diag_loss = 0.5 * diff[off_diagonal].pow(2).mean()
+        fb_diag_loss = -fb_M.diag().mean()
+        fb_loss = fb_off_diag_loss + fb_diag_loss
+        
+        # Orthonormality loss
+        cov = cur_b @ cur_b.T
+        ort_loss_diag = -2 * cov.diag().mean()
+        ort_loss_offdiag = cov[off_diagonal].pow(2).mean()
+        ort_loss = ort_loss_diag + ort_loss_offdiag
+        total_loss = fb_loss + ort_loss
+        
+        return total_loss, {
+            'fb_loss': total_loss,
         }
 
     def actor_loss(self, batch, grad_params, rng):
-        """Compute the SAC actor loss."""
-        dist = self.network.select('actor')(batch['observations'], params=grad_params)
+        rng, sample_rng = jax.random.split(rng)
+        
+        z_latent = self.sample_z(key=sample_rng, batch_size=self.config['batch_size'], latent_dim=self.config['z_dim'])
+        dist = self.network.select('actor')(batch['observations'], z_latent, params=grad_params)
         actions, log_probs = dist.sample_and_log_prob(seed=rng)
 
         # Actor loss.
-        qs = self.network.select('critic')(batch['observations'], actions)
-        q = jnp.mean(qs, axis=0)
-
-        actor_loss = (log_probs * self.network.select('alpha')() - q).mean()
-
-        # Entropy loss.
-        alpha = self.network.select('alpha')(params=grad_params)
-        entropy = -jax.lax.stop_gradient(log_probs).mean()
-        alpha_loss = (alpha * (entropy - self.config['target_entropy'])).mean()
-
-        total_loss = actor_loss + alpha_loss
-
-        if self.config['tanh_squash']:
-            action_std = dist._distribution.stddev()
-        else:
-            action_std = dist.stddev().mean()
-
-        return total_loss, {
-            'total_loss': total_loss,
-            'actor_loss': actor_loss,
-            'alpha_loss': alpha_loss,
-            'alpha': alpha,
-            'entropy': -log_probs.mean(),
-            'std': action_std.mean(),
-            'q': q.mean(),
+        M, F, B = self.network.select('fb')(batch['observations'], actions, z_latent, batch['actor_goals'])
+        Q = -(F @ z_latent).mean()
+        
+        return Q, {
+            'total_loss': Q,
+            'entropy': -log_probs.mean()
         }
 
     @jax.jit
@@ -112,6 +108,16 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         z = jax.random.normal(shape=(batch_size, latent_dim), key=key)
         return z / jnp.linalg.norm(z, axis=-1, keepdims=True) * jnp.sqrt(z.shape[-1])
         
+    def infer_z(self, obs, rewards=None):
+        """
+        If reards are None -> treat as goal-conditioned
+        """    
+        _, _, z = self.network.select('target_fb')(obs, None, None, obs, info=True)
+        if rewards is not None:
+            z = (rewards.T @ z)
+        # TODO: Normalize?
+        return z
+        
     @jax.jit
     def sample_actions(
         self,
@@ -156,15 +162,26 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         fb_def = FBValue(
             hidden_dims=config['fb_hidden_dims'],
             layer_norm=config['fb_layer_norm'],
-            grid_world=True
+            grid_world=config['discrete']
         )
         
-        actor_def = FBDiscreteActor(
-            hidden_dims=config['actor_hidden_dims'],
-            action_dim=action_dim,
-            layer_norm=config['actor_layer_norm'],
-            grid_world=True
-        )
+        if config['discrete']:
+            actor_def = FBDiscreteActor(
+                hidden_dims=config['actor_hidden_dims'],
+                action_dim=action_dim,
+                layer_norm=config['actor_layer_norm'],
+                grid_world=True
+            )
+        else:
+            actor_def = Actor(
+                hidden_dims=config['actor_hidden_dims'],
+                action_dim=action_dim,
+                layer_norm=config['actor_layer_norm'],
+                tanh_squash=config['tanh_squash'],
+                state_dependent_std=config['state_dependent_std'],
+                const_std=False,
+                final_fc_init_scale=config['actor_fc_scale'],
+            )
         latent_z = jax.random.normal(init_rng, shape=(config['z_dim']))
         network_info = dict(
             fb=(fb_def, (ex_observations, ex_actions, latent_z)),
@@ -206,6 +223,20 @@ def get_config():
             actor_fc_scale=0.01,  # Final layer initialization scale for actor.
             q_agg='min',  # Aggregation function for target Q values.
             backup_entropy=False,  # Whether to back up entropy in the critic loss.
+            
+            # Dataset hyperparameters.
+            dataset_class='GCDataset',  # Dataset class name.
+            value_p_curgoal=0.0,  # Probability of using the current state as the value goal.
+            value_p_trajgoal=1.0,  # Probability of using a future state in the same trajectory as the value goal.
+            value_p_randomgoal=0.0,  # Probability of using a random state as the value goal.
+            value_geom_sample=True,  # Whether to use geometric sampling for future value goals.
+            actor_p_curgoal=0.0,  # Probability of using the current state as the actor goal.
+            actor_p_trajgoal=1.0,  # Probability of using a future state in the same trajectory as the actor goal.
+            actor_p_randomgoal=0.0,  # Probability of using a random state as the actor goal.
+            actor_geom_sample=False,  # Whether to use geometric sampling for future actor goals.
+            gc_negative=True,  # Whether to use '0 if s == g else -1' (True) or '1 if s == g else 0' (False) as reward.
+            p_aug=0.0,  # Probability of applying image augmentation.
+            frame_stack=ml_collections.config_dict.placeholder(int),  # Number of frames to stack.
         )
     )
     return config

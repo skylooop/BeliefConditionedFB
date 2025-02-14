@@ -316,10 +316,9 @@ class FBDiscreteActor(nn.Module):
     action_dim: int
     final_fc_init_scale: float = 1e-2
     layer_norm: bool = False
-    grid_world: bool = True
     
     def setup(self):
-        self.radial_features_module = RadialBasisFeatures
+        self.radial_features_module = RadialBasisFeatures()
         self.actor_net = MLP(self.hidden_dims, activate_final=True, layer_norm=self.layer_norm)
         self.logit_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
 
@@ -335,6 +334,68 @@ class FBDiscreteActor(nn.Module):
         logits = self.logit_net(outputs)
 
         distribution = distrax.Categorical(logits=logits / jnp.maximum(1e-6, temperature))
+
+        return distribution
+
+class FBActor(nn.Module):
+    """Goal-conditioned actor.
+
+    Attributes:
+        hidden_dims: Hidden layer dimensions.
+        action_dim: Action dimension.
+        log_std_min: Minimum value of log standard deviation.
+        log_std_max: Maximum value of log standard deviation.
+        tanh_squash: Whether to squash the action with tanh.
+        state_dependent_std: Whether to use state-dependent standard deviation.
+        const_std: Whether to use constant standard deviation.
+        final_fc_init_scale: Initial scale of the final fully-connected layer.
+        gc_encoder: Optional GCEncoder module to encode the inputs.
+    """
+
+    hidden_dims: Sequence[int]
+    action_dim: int
+    log_std_min: Optional[float] = -5
+    log_std_max: Optional[float] = 2
+    tanh_squash: bool = False
+    state_dependent_std: bool = False
+    const_std: bool = True
+    final_fc_init_scale: float = 1e-2
+    gc_encoder: nn.Module = None
+
+    def setup(self):
+        self.radial_features_module = RadialBasisFeatures()
+        self.actor_net = MLP(self.hidden_dims, activate_final=True)
+        self.mean_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
+        if self.state_dependent_std:
+            self.log_std_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
+        else:
+            if not self.const_std:
+                self.log_stds = self.param('log_stds', nn.initializers.zeros, (self.action_dim,))
+
+    def __call__(
+        self,
+        observations,
+        z_latent,
+        temperature=1.0,
+    ):
+        observations = self.radial_features_module(observations)
+        inputs = jnp.concatenate([observations, z_latent], axis=-1)
+        outputs = self.actor_net(inputs)
+
+        means = self.mean_net(outputs)
+        if self.state_dependent_std:
+            log_stds = self.log_std_net(outputs)
+        else:
+            if self.const_std:
+                log_stds = jnp.zeros_like(means)
+            else:
+                log_stds = self.log_stds
+
+        log_stds = jnp.clip(log_stds, self.log_std_min, self.log_std_max)
+
+        distribution = distrax.MultivariateNormalDiag(loc=means, scale_diag=jnp.exp(log_stds) * temperature)
+        if self.tanh_squash:
+            distribution = TransformedWithMode(distribution, distrax.Block(distrax.Tanh(), ndims=1))
 
         return distribution
 

@@ -4,7 +4,6 @@ import jax
 import numpy as np
 from tqdm import trange
 
-
 def supply_rng(f, rng=jax.random.PRNGKey(0)):
     """Helper function to split the random number generator key before each call to the function."""
 
@@ -76,8 +75,9 @@ def evaluate(
         done = False
         step = 0
         render = []
+        latent_z = agent.infer_z(goal)
         while not done:
-            action = actor_fn(observations=observation, goals=goal, temperature=eval_temperature)
+            action = actor_fn(observations=observation, latent_z=latent_z, temperature=eval_temperature)
             action = np.array(action)
             if not config.get('discrete'):
                 if eval_gaussian is not None:
