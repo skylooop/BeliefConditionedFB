@@ -29,10 +29,13 @@ def ensemblize(cls, num_qs, out_axes=0, **kwargs):
 class RadialBasisFeatures(nn.Module):
     sigma: float = 0.1
     number_of_gaussians: int = 10
-    
+    # for ant-medium envs
+    env_limits_x: Sequence[float] = (-1.2889566, 21.254427)
+    env_limits_y: Sequence[float] = (-1.1615522, 21.246302)
+
     def setup(self):
-        self.centers = jnp.array([(x, y) for x in jnp.linspace(0, 1, self.number_of_gaussians)
-                              for y in jnp.linspace(0, 1, self.number_of_gaussians)])
+        self.centers = jnp.array([(x, y) for x in jnp.linspace(self.env_limits_x[0], self.env_limits_x[1], self.number_of_gaussians)
+                              for y in jnp.linspace(self.env_limits_y[0], self.env_limits_y[1], self.number_of_gaussians)])
     
     def __call__(self, x):
         sx, sy = x[:2]
@@ -84,7 +87,7 @@ class LengthNormalize(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        return x / jnp.linalg.norm(x, axis=-1, keepdims=True) * jnp.sqrt(x.shape[-1])
+        return x / (jnp.linalg.norm(x, axis=-1, keepdims=True) + 1e-12) * jnp.sqrt(x.shape[-1])
 
 
 class Param(nn.Module):
@@ -282,30 +285,38 @@ class GCDiscreteActor(nn.Module):
         return distribution
 
 class FBValue(nn.Module):
-    hidden_dims: Sequence[int]
-    layer_norm: bool = False
+    latent_z_dim: int
+    # Forward params
+    fb_forward_hidden_dims: Sequence[int] = (1024, 1024)
+    fb_forward_layer_norm: bool = False
+    fb_forward_preprocessor_hidden_dims: Sequence[int] = (1024, 512)
+    # Backward params
+    fb_backward_hidden_dims: Sequence[int] = (256, 256, 256)
+    fb_backward_layer_norm: bool = False
+    
     grid_world: bool = True # for grid world env: (x, y) scaled to [0, 1] and then radial features applied
     
     def setup(self):
         mlp_module = MLP
-        self.radial_features_module = RadialBasisFeatures()
-        self.forward_map = mlp_module((*self.hidden_dims, ), activate_final=False, layer_norm=self.layer_norm)
-        self.backward_map = mlp_module((*self.hidden_dims, ), activate_final=False, layer_norm=self.layer_norm)
-    
+        #self.radial_features_module = RadialBasisFeatures()
+        self.forward_map = mlp_module((*self.fb_forward_hidden_dims, self.latent_z_dim), activate_final=False, layer_norm=self.fb_forward_layer_norm)
+        self.forward_preprocessor_sa = mlp_module((*self.fb_forward_preprocessor_hidden_dims, ))
+        self.forward_preprocessor_sz = mlp_module((*self.fb_forward_preprocessor_hidden_dims, ))
+        self.backward_map = mlp_module((*self.fb_backward_hidden_dims, self.latent_z_dim), activate_final=False, layer_norm=self.fb_backward_layer_norm)
+        self.project_onto = LengthNormalize()
+        
     def __call__(self, observations, actions=None, latent_z=None, goal=None, info=False):
-        if self.grid_world:
-            observations = self.radial_features_module(observations)
-            goal = self.radial_features_module(goal)
-            
-        inputs = [observations]
+        # Forward process
+        #observations = self.radial_features_module(observations)
         if actions is not None:
-            inputs.append(actions)
-            inputs.append(latent_z)
-        
-        inputs = jnp.concatenate(inputs, axis=-1)
-        
-        forward_map_values = self.forward_map(inputs)
-        backward_map_values = self.backward_map(goal) 
+            processed_sa = self.forward_preprocessor_sa(jnp.concatenate([observations, actions], -1))
+            processed_sz = self.forward_preprocessor_sz(jnp.concatenate([observations, latent_z], -1))
+            forward_map_values = self.forward_map(jnp.concatenate([processed_sa, processed_sz], -1))
+
+        #goal = self.radial_features_module(goal)
+        # Backward process
+        backward_map_values = self.backward_map(goal) # ? norm by latent_z?
+        backward_map_values = self.project_onto(backward_map_values)
         v = forward_map_values @ backward_map_values.T
         if info:
             return v, forward_map_values, backward_map_values
@@ -318,7 +329,7 @@ class FBDiscreteActor(nn.Module):
     layer_norm: bool = False
     
     def setup(self):
-        self.radial_features_module = RadialBasisFeatures()
+        #self.radial_features_module = RadialBasisFeatures()
         self.actor_net = MLP(self.hidden_dims, activate_final=True, layer_norm=self.layer_norm)
         self.logit_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
 
@@ -356,14 +367,17 @@ class FBActor(nn.Module):
     action_dim: int
     log_std_min: Optional[float] = -5
     log_std_max: Optional[float] = 2
-    tanh_squash: bool = False
+    tanh_squash: bool = True
     state_dependent_std: bool = False
     const_std: bool = True
     final_fc_init_scale: float = 1e-2
     gc_encoder: nn.Module = None
-
+    fb_forward_preprocessor_hidden_dims: Sequence[int] = (1024, 512)
+    
     def setup(self):
-        self.radial_features_module = RadialBasisFeatures()
+        #self.radial_features_module = RadialBasisFeatures()
+        self.forward_preprocessor_sa = MLP((*self.fb_forward_preprocessor_hidden_dims, ))
+        self.forward_preprocessor_sz = MLP((*self.fb_forward_preprocessor_hidden_dims, ))
         self.actor_net = MLP(self.hidden_dims, activate_final=True)
         self.mean_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
         if self.state_dependent_std:
@@ -375,11 +389,13 @@ class FBActor(nn.Module):
     def __call__(
         self,
         observations,
-        z_latent,
+        latent_z,
         temperature=1.0,
     ):
-        observations = self.radial_features_module(observations)
-        inputs = jnp.concatenate([observations, z_latent], axis=-1)
+        #observations = self.radial_features_module(observations)
+        processed_s = self.forward_preprocessor_sa(observations)
+        processed_sz = self.forward_preprocessor_sz(jnp.concatenate([observations, latent_z], -1))
+        inputs = jnp.concatenate([processed_s, processed_sz], axis=-1)
         outputs = self.actor_net(inputs)
 
         means = self.mean_net(outputs)
