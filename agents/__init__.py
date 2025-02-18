@@ -1,7 +1,7 @@
 from agents.sac import SACAgent
-from agents.rnd import SACRNDAgent
+from agents.fb import ForwardBackwardAgent
 
 agents = dict(
     sac=SACAgent,
-    rnd=SACRNDAgent
+    fb=ForwardBackwardAgent
 )

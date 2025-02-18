@@ -41,7 +41,7 @@ def evaluate(
     num_eval_episodes=50,
     num_video_episodes=0,
     video_frame_skip=3,
-    eval_temperature=0,
+    eval_temperature=0.0,
     eval_gaussian=None,
 ):
     """Evaluate the agent in the environment.
@@ -63,9 +63,9 @@ def evaluate(
     actor_fn = supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32)))
     trajs = []
     stats = defaultdict(list)
-
+    pbar = trange(num_eval_episodes + num_video_episodes, leave=False, colour='red', position=2)
     renders = []
-    for i in trange(num_eval_episodes + num_video_episodes):
+    for i in pbar:
         traj = defaultdict(list)
         should_render = i >= num_eval_episodes
 

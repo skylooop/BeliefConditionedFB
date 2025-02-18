@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 aux_data/
-
+wandb/
 # C extensions
 *.so
 
