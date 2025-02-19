@@ -13,6 +13,7 @@ def default_init(scale=1.0):
     """Default kernel initializer."""
     return nn.initializers.variance_scaling(scale, 'fan_avg', 'uniform')
 
+# TODO: orto
 # def orthogonal_init():
 #     return nn.initializers.
 
@@ -291,46 +292,43 @@ class GCDiscreteActor(nn.Module):
 
         return distribution
 
-class FBValue(nn.Module):
+class FValue(nn.Module):
     latent_z_dim: int
     # Forward params
     fb_forward_hidden_dims: Sequence[int] = (1024, 1024)
-    fb_forward_layer_norm: bool = False
     fb_forward_preprocessor_hidden_dims: Sequence[int] = (1024, 1024, 512)
-    # Backward params
-    fb_backward_hidden_dims: Sequence[int] = (256, 256, 256)
-    fb_backward_layer_norm: bool = False
-    
-    grid_world: bool = True # for grid world env: (x, y) scaled to [0, 1] and then radial features applied
     
     def setup(self):
         mlp_module = MLP
-        #forward_mlp_module = ensemblize(MLP, 2)
-        self.forward_map = mlp_module((*self.fb_forward_hidden_dims, self.latent_z_dim), activate_final=False,
-                                      layer_norm=False, activations=nn.relu)
-        self.forward_preprocessor_sa = mlp_module(hidden_dims=self.fb_forward_preprocessor_hidden_dims, layer_norm=False,
+        forward_mlp_module = ensemblize(MLP, 2)
+        self.forward_map = forward_mlp_module((*self.fb_forward_hidden_dims, self.latent_z_dim), activate_final=True,
+                                      layer_norm=True, activations=nn.relu)
+        self.forward_preprocessor_sa = mlp_module(hidden_dims=self.fb_forward_preprocessor_hidden_dims, layer_norm=True,
                                                   activate_final=True, layer_norm_only_first=True, activations=nn.relu)
-        self.forward_preprocessor_sz = mlp_module(hidden_dims=self.fb_forward_preprocessor_hidden_dims, layer_norm=False,
+        self.forward_preprocessor_sz = mlp_module(hidden_dims=self.fb_forward_preprocessor_hidden_dims, layer_norm=True,
                                                   activate_final=True, layer_norm_only_first=True, activations=nn.relu)
-        self.backward_map = mlp_module((*self.fb_backward_hidden_dims, self.latent_z_dim), activate_final=False,
-                                       layer_norm=False, layer_norm_only_first=True, activations=nn.relu)
-        self.project_onto = LengthNormalize()
     
-    def __call__(self, observations=None, actions=None, latent_z=None, goal=None, get_backward=False):
-        # Backward process
-        backward_map_values = self.backward_map(goal)
-        backward_map_values = self.project_onto(backward_map_values)
-        
-        if get_backward:
-            return backward_map_values
-
-        # Forward process
+    def __call__(self, observations, actions, latent_z):
         processed_sa = self.forward_preprocessor_sa(jnp.concatenate([observations, actions], -1))
         processed_sz = self.forward_preprocessor_sz(jnp.concatenate([observations, latent_z], -1))
-        forward_map_values = self.forward_map(jnp.concatenate([processed_sa, processed_sz], -1))
+        f1, f2 = self.forward_map(jnp.concatenate([processed_sa, processed_sz], -1))
         
-        return forward_map_values, backward_map_values
+        return f1, f2
 
+class BValue(nn.Module):
+    latent_z_dim: int
+    # Backward params
+    fb_backward_hidden_dims: Sequence[int] = (256, 256, 256)
+    
+    def setup(self):
+        mlp_module = MLP
+        self.backward_map = mlp_module((*self.fb_backward_hidden_dims, self.latent_z_dim), activate_final=False,
+                                        layer_norm=True, layer_norm_only_first=True, activations=nn.relu)
+        self.project_onto = LengthNormalize()
+        
+    def __call__(self, goal):
+        return self.project_onto(self.backward_map(goal))
+    
 class FBDiscreteActor(nn.Module):
     hidden_dims: Sequence[int]
     action_dim: int
@@ -386,10 +384,10 @@ class FBActor(nn.Module):
     
     def setup(self):
         self.forward_preprocessor_s = MLP((*self.fb_forward_preprocessor_hidden_dims, self.z_dim), layer_norm_only_first=True,
-                                           activate_final=True, activations=nn.relu)
+                                           activate_final=True, activations=nn.relu, layer_norm=False)
         self.forward_preprocessor_sz = MLP((*self.fb_forward_preprocessor_hidden_dims, self.z_dim), layer_norm_only_first=True,
-                                           activate_final=True, activations=nn.relu)
-        self.actor_net = MLP(self.hidden_dims, activate_final=True, activations=nn.relu)
+                                           activate_final=True, activations=nn.relu, layer_norm=False)
+        self.actor_net = MLP(self.hidden_dims, activate_final=False, activations=nn.relu, layer_norm=False)
         self.mean_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
         if self.state_dependent_std:
             self.log_std_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
