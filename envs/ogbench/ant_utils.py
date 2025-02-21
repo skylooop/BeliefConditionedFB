@@ -97,7 +97,7 @@ def plot_value(env, dataset, value_fn, N=14, M=20, fig=None, ax=None, random=Fal
     goal = kwargs.get('goal', None)
     if goal is not None:
         ax.set_title('Goal: ({:.2f}, {:.2f})'.format(goal[0], goal[1])) 
-        ax.scatter(goal[0], goal[1], s=80, c='yellow', marker='*')
+        ax.scatter(goal[0], goal[1], s=80, c='black', marker='*')
     
     if title:
         ax.set_title(title)
@@ -128,10 +128,10 @@ def plot_policy(env, dataset, N=14, M=20, fig=None, ax=None, random=False, title
     start = kwargs.get('start', None)
     if goal is not None:
         ax.set_title('Goal: ({:.2f}, {:.2f})'.format(goal[0], goal[1])) 
-        ax.scatter(goal[0], goal[1], s=80, c='yellow', marker='*')
+        ax.scatter(goal[0], goal[1], s=80, c='black', marker='*')
 
     if start is not None:
-        ax.scatter(start[0], start[1], s=80, c='green', marker='o')
+        ax.scatter(start[0], start[1], s=80, c='orange', marker='o')
         
     if title:
         ax.set_title(title)
@@ -259,7 +259,7 @@ def gcvalue_image(env, dataset, value_fn):
         plot_value(env, dataset, partial(value_fn, goal_observation), fig, ax)
 
         ax.set_title('Goal: ({:.2f}, {:.2f})'.format(point[0], point[1])) 
-        ax.scatter(point[0], point[1], s=50, c='red', marker='*')
+        ax.scatter(point[0], point[1], s=50, c='orange', marker='*')
 
     image = get_canvas_image(canvas)
     plt.close(fig)

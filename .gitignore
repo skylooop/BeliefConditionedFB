@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 aux_data/
 wandb/
+experiment_logs/
 # C extensions
 *.so
 

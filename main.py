@@ -1,6 +1,6 @@
 import os
 os.environ['MUJOCO_GL']='egl'
-os.environ['CUDA_VISIBLE_DEVICES']='1'
+# os.environ['CUDA_VISIBLE_DEVICES']='1'
 
 import shutup
 shutup.please()
@@ -28,7 +28,7 @@ from envs.env_utils import make_env_and_datasets
 from utils.datasets import Dataset, ReplayBuffer, GCDataset
 from utils.evaluation import evaluate, flatten, supply_rng
 from utils.flax_utils import restore_agent, save_agent
-from utils.log_utils import CsvLogger, get_exp_name, get_flag_dict, get_wandb_video, setup_wandb
+from utils.log_utils import CsvLogger, get_exp_name, get_wandb_video, setup_wandb
 from envs.ogbench.ant_utils import MazeVizWrapper, policy_image, value_image
 
 FLAGS = flags.FLAGS
@@ -50,7 +50,7 @@ flags.DEFINE_integer('save_interval', 1000000, 'Saving interval.')
 
 flags.DEFINE_integer('eval_tasks', None, 'Number of online steps.')
 flags.DEFINE_float('eval_temperature', 0, 'Number of online steps.')
-flags.DEFINE_integer('eval_episodes', 1, 'Number of evaluation episodes.')
+flags.DEFINE_integer('eval_episodes', 5, 'Number of evaluation episodes.')
 flags.DEFINE_integer('video_episodes', 0, 'Number of video episodes for each task.')
 flags.DEFINE_integer('video_frame_skip', 3, 'Frame skip for videos.')
 flags.DEFINE_float('eval_gaussian', None, 'Action Gaussian noise for evaluation.')
@@ -105,13 +105,14 @@ def main():
     print(Fore.BLUE + "Task" + Style.RESET_ALL)
     print(Fore.RED + "Episode" + Style.RESET_ALL)
     
-    for step in tqdm(range(1, FLAGS.train_steps + 1), colour='green', dynamic_ncols=True, position=0, leave=True):
+    pbar = tqdm(range(1, FLAGS.train_steps + 1), colour='green', dynamic_ncols=True, position=0, leave=True)
+    for step in pbar:
         key = jax.random.fold_in(key, step)
         batch = train_dataset.sample(config['batch_size'])
         agent, update_info = agent.update(batch)
         
         # Log metrics.
-        if step % FLAGS.log_interval == 0:
+        if step % FLAGS.log_interval == 0 or step == 1:
             train_metrics = {f'training/{k}': v for k, v in update_info.items()}
             if val_dataset is not None:
                 val_batch = val_dataset.sample(config['batch_size'])
@@ -135,25 +136,25 @@ def main():
                 num_tasks = FLAGS.eval_tasks if FLAGS.eval_tasks is not None else len(task_infos)
                 for task_id in tqdm(range(1, num_tasks + 1), leave=False, position=1, colour='blue'):
                     task_name = task_infos[task_id - 1]['task_name']
-                    # eval_info, trajs, cur_renders = evaluate(
-                    #     agent=agent,
-                    #     env=env,
-                    #     task_id=task_id,
-                    #     config=config,
-                    #     num_eval_episodes=FLAGS.eval_episodes,
-                    #     num_video_episodes=FLAGS.video_episodes,
-                    #     video_frame_skip=FLAGS.video_frame_skip,
-                    #     eval_temperature=FLAGS.eval_temperature,
-                    #     eval_gaussian=FLAGS.eval_gaussian,
-                    # )
-                    # renders.extend(cur_renders)
-                    # metric_names = ['success']
-                    # eval_metrics.update(
-                    #     {f'evaluation/{task_name}_{k}': v for k, v in eval_info.items() if k in metric_names}
-                    # )
-                    # for k, v in eval_info.items():
-                    #     if k in metric_names:
-                    #         overall_metrics[k].append(v)
+                    eval_info, trajs, cur_renders = evaluate(
+                        agent=agent,
+                        env=env,
+                        task_id=task_id,
+                        config=config,
+                        num_eval_episodes=FLAGS.eval_episodes,
+                        num_video_episodes=FLAGS.video_episodes,
+                        video_frame_skip=FLAGS.video_frame_skip,
+                        eval_temperature=FLAGS.eval_temperature,
+                        eval_gaussian=FLAGS.eval_gaussian,
+                    )
+                    renders.extend(cur_renders)
+                    metric_names = ['success']
+                    eval_metrics.update(
+                        {f'evaluation/{task_name}_{k}': v for k, v in eval_info.items() if k in metric_names}
+                    )
+                    for k, v in eval_info.items():
+                        if k in metric_names:
+                            overall_metrics[k].append(v)
                             
                     if FLAGS.env_name.split("-")[1] in ['antmaze', 'pointmaze']:
                         observation, info = eval_env.reset(options=dict(task_id=task_id, render_goal=True))
@@ -165,10 +166,10 @@ def main():
                         latent_z = np.tile(latent_z, (N * M, 1))
                         pred_value_img = value_image(eval_env, example_batch, N=N, M=M,
                                                     value_fn=partial(agent.predict_q, z=latent_z),
-                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.0),
+                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.05),
                                                     goal=goal)
                         pred_policy_img = policy_image(eval_env, example_batch, N=N, M=M,
-                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.0),
+                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.05),
                                                     goal=goal, start=start)
                         eval_metrics[f'draw_Q/draw_value_task_{task_id}'] = wandb.Image(pred_value_img)
                         eval_metrics[f'draw_policy/draw_policy_task_{task_id}'] = wandb.Image(pred_policy_img)

@@ -37,17 +37,18 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         
         I = np.eye(batch['observations'].shape[0], dtype=bool)
         off_diag = ~I
-
-        #diff = M - self.config['discount'] * target_M
-        fb_offdiag = 0.5 * sum(jnp.pow((M - self.config['discount'] * target_M)[off_diag], 2).mean() for M in [M1, M2])
+        off_diag_sum = off_diag.sum()
+        
+        fb_offdiag = 0.5 * sum(jnp.pow((M - self.config['discount'] * target_M)[off_diag], 2).sum()/off_diag_sum for M in [M1, M2])
         fb_diag = -sum(jnp.diag((M - self.config['discount'] * target_M)).mean() for M in [M1, M2])
         fb_loss = fb_diag + fb_offdiag
         
         # Orthonormality loss
         cov_b = B @ B.T
         ort_loss_diag = -2 * jnp.diag(cov_b).mean()
-        ort_loss_offdiag = ((cov_b[off_diag])**2).sum() / off_diag.sum()
+        ort_loss_offdiag = ((cov_b[off_diag])**2).sum() / off_diag_sum
         ort_b_loss = ort_loss_diag + ort_loss_offdiag
+        
         total_loss = fb_loss + ort_b_loss
         
         correct_fb = jnp.argmax(M1, axis=1) == jnp.argmax(I, axis=1)
@@ -58,7 +59,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             "fb_loss": total_loss,
             "z_norm": jnp.linalg.norm(z_latent, axis=-1).mean(),
             # ORTHONORMALITY METRICS
-            "ort_b_loss": ort_b_loss,
+            #"ort_b_loss": ort_b_loss,
             # "ort_loss_diag": ort_loss_diag,
             # "ort_loss_offdiag": ort_loss_offdiag,
             "correct_ort": jnp.mean(correct_ort),
@@ -107,7 +108,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
 
     def target_update(self, network, module_name):
         """Update the target network."""
-        new_target_params = jax.tree_util.tree_map(
+        new_target_params = jax.tree.map(
             lambda p, tp: p * self.config['tau'] + tp * (1 - self.config['tau']),
             network.params[f'modules_{module_name}'],
             network.params[f'modules_target_{module_name}'],
@@ -225,7 +226,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             action_dim=action_dim,
             tanh_squash=config['tanh_squash'],
             state_dependent_std=config['state_dependent_std'],
-            const_std=False,
+            const_std=config['const_std'],
             final_fc_init_scale=config['actor_fc_scale'],
         )
         latent_z = jax.random.normal(init_rng, shape=(1, config['z_dim']))
@@ -265,25 +266,25 @@ def get_config():
             agent_name='fb',  # Agent name.
             discrete=False,
             lr=1e-4,  # Learning rate.
-            batch_size=512,  # Batch size.
-            
+            batch_size=1024,  # Batch size.
             # FB Specific
-            z_dim=50, # 100 for maze env, 50 for others
+            z_dim=30, # 100 for maze env, 50 for others
             fb_forward_hidden_dims=(1024, 1024),  # Value network hidden dimensions.
             fb_forward_layer_norm=True,  # Whether to use layer normalization.
-            fb_forward_preprocessor_hidden_dims=(1024, 1024, 512),
+            fb_forward_preprocessor_hidden_dims=(1024, 512),
             fb_backward_hidden_dims=(256, 256, 256),  # Value network hidden dimensions.
             fb_backward_layer_norm=True,  # Whether to use layer normalization.
             z_mix_ratio=0.5,
             # Actor
-            actor_hidden_dims=(1024, 1024),  # Actor network hidden dimensions.
+            actor_hidden_dims=(512, 512),  # Actor network hidden dimensions.
             actor_layer_norm=False,  # Whether to use layer normalization for the actor.
-            discount=0.98,  # Discount factor. 0.99 - for maze, 0.98 others
+            # MISC
+            discount=0.99,  # Discount factor. 0.99 - for maze, 0.98 others
             tau=0.01,  # Target network update rate.
             tanh_squash=True,  # Whether to squash actions with tanh.
-            state_dependent_std=True,  # Whether to use state-dependent standard deviations for actor.
+            state_dependent_std=False,  # Whether to use state-dependent standard deviations for actor.
             actor_fc_scale=0.01,  # Final layer initialization scale for actor.
-    
+            const_std=True,
             # Dataset hyperparameters.
             dataset_class='GCDataset',  # Dataset class name.
             value_p_curgoal=0.0,  # Probability of using the current state as the value goal.
