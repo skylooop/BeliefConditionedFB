@@ -5,6 +5,7 @@ __pycache__/
 aux_data/
 wandb/
 experiment_logs/
+*.csv
 # C extensions
 *.so
 

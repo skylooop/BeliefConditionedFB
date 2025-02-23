@@ -6,7 +6,7 @@ import shutup
 shutup.please()
 
 import rootutils
-ROOT = rootutils.setup_root(search_from=__file__, cwd=True, pythonpath=True)
+ROOT = rootutils.setup_root(search_from=__file__, cwd=True, pythonpath=True, indicator='requirements.txt')
 
 import random
 import time
@@ -36,7 +36,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_bool('disable_jit', True, 'Disable jit.')
 flags.DEFINE_string('run_group', 'Debug', 'Run group.')
 flags.DEFINE_integer('seed', 0, 'Random seed.')
-flags.DEFINE_string('env_name', 'ogbench-pointmaze-medium-navigate-v0', 'Environment (dataset) name.')
+flags.DEFINE_string('env_name', 'ogbench-pointmaze-medium-stitch-v0', 'Environment (dataset) name.')
 flags.DEFINE_string('save_dir', 'experiment_logs/', 'Save directory.')
 flags.DEFINE_string('restore_path', None, 'Restore path.')
 flags.DEFINE_integer('restore_epoch', None, 'Restore epoch.')
@@ -51,7 +51,7 @@ flags.DEFINE_integer('save_interval', 1000000, 'Saving interval.')
 flags.DEFINE_integer('eval_tasks', None, 'Number of online steps.')
 flags.DEFINE_float('eval_temperature', 0, 'Number of online steps.')
 flags.DEFINE_integer('eval_episodes', 5, 'Number of evaluation episodes.')
-flags.DEFINE_integer('video_episodes', 0, 'Number of video episodes for each task.')
+flags.DEFINE_integer('video_episodes', 1, 'Number of video episodes for each task.')
 flags.DEFINE_integer('video_frame_skip', 3, 'Frame skip for videos.')
 flags.DEFINE_float('eval_gaussian', None, 'Action Gaussian noise for evaluation.')
 flags.DEFINE_float('p_aug', None, 'Probability of applying image augmentation.')
@@ -119,6 +119,7 @@ def main():
                 latent_z = agent.sample_mixed_z(batch, config['z_dim'], key)
                 _, val_info = agent.total_loss(val_batch, latent_z, grad_params=None)
                 train_metrics.update({f'validation/{k}': v for k, v in val_info.items()})
+                
             train_metrics['time/epoch_time'] = (time.time() - last_time) / FLAGS.log_interval
             train_metrics['time/total_time'] = time.time() - first_time
             last_time = time.time()

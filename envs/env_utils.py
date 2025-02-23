@@ -83,6 +83,14 @@ class FrameStackWrapper(gymnasium.Wrapper):
         ob, reward, terminated, truncated, info = self.env.step(action)
         self.frames.append(ob)
         return self.get_observation(), reward, terminated, truncated, info
+
+def normalize_data(input_data):
+    x_min, x_max = input_data[:, 0].min(), input_data[:, 0].max()
+    y_min, y_max = input_data[:, 1].min(), input_data[:, 1].max()
+    normalized_observations = np.zeros_like(input_data)
+    normalized_observations[:, 0] = (input_data[:, 0] - x_min) / (x_max - x_min)  # Normalize x
+    normalized_observations[:, 1] = (input_data[:, 1] - y_min) / (y_max - y_min)  # Normalize 
+    return normalized_observations
     
 def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5):
     """Make OGBench environment and datasets.
@@ -98,6 +106,13 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5):
     if 'ogbench' in dataset_name:
         dataset_name = "-".join(dataset_name.split("-")[1:])
         env, train_dataset, val_dataset = ogbench.make_env_and_datasets(dataset_name, compact_dataset=False)
+        
+        # train_dataset['observations'] = normalize_data(train_dataset['observations'])
+        # train_dataset['next_observations'] = normalize_data(train_dataset['next_observations'])
+        
+        # val_dataset['observations'] = normalize_data(val_dataset['observations'])
+        # val_dataset['next_observations'] = normalize_data(val_dataset['next_observations'])
+        
         eval_env = ogbench.make_env_and_datasets(dataset_name, env_only=True)
         env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
         eval_env = EpisodeMonitor(eval_env, filter_regexes=['.*privileged.*', '.*proprio.*'])

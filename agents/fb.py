@@ -19,47 +19,55 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
 
     def fb_loss(self, batch, z_latent, grad_params, rng):
         rng, sample_rng = jax.random.split(rng)
-        
+
         # Target M
         next_dist = self.network.select('actor')(batch['next_observations'], z_latent)
         next_actions = next_dist.sample(seed=sample_rng)
         target_F1, target_F2 = self.network.select('target_f_value')(batch['next_observations'], next_actions, z_latent)
-        target_B = self.network.select('target_b_value')(goal=batch['next_observations'])
+        target_B = self.network.select('target_b_value')(batch['next_observations']) #(batch['next_observations'])
         target_M1 = target_F1 @ target_B.T
         target_M2 = target_F2 @ target_B.T
         target_M = jnp.minimum(target_M1, target_M2)
         
         # Cur M
-        F1, F2 = self.network.select('f_value')(batch['observations'], next_actions, z_latent, params=grad_params)
-        B = self.network.select('b_value')(goal=batch['next_observations'], params=grad_params)
+        F1, F2 = self.network.select('f_value')(batch['observations'], batch['actions'], z_latent, params=grad_params)
+        B = self.network.select('b_value')(batch['next_observations'], params=grad_params) #(batch['next_observations'], params=grad_params)
         M1 = F1 @ B.T
         M2 = F2 @ B.T
         
         I = np.eye(batch['observations'].shape[0], dtype=bool)
         off_diag = ~I
-        off_diag_sum = off_diag.sum()
-        
-        fb_offdiag = 0.5 * sum(jnp.pow((M - self.config['discount'] * target_M)[off_diag], 2).sum()/off_diag_sum for M in [M1, M2])
-        fb_diag = -sum(jnp.diag((M - self.config['discount'] * target_M)).mean() for M in [M1, M2])
+
+        fb_offdiag = 0.5 * sum(jnp.pow((M - self.config['discount'] * target_M)[off_diag], 2).mean() for M in [M1, M2])
+        #fb_diag = -sum(jnp.diag((M - self.config['discount'] * target_M)).mean() for M in [M1, M2])
+        fb_diag = -sum(jnp.diag(M).mean() for M in [M1, M2])
         fb_loss = fb_diag + fb_offdiag
         
         # Orthonormality loss
-        cov_b = B @ B.T
+        cov_b = B @ jax.lax.stop_gradient(B.T)
         ort_loss_diag = -2 * jnp.diag(cov_b).mean()
-        ort_loss_offdiag = ((cov_b[off_diag])**2).sum() / off_diag_sum
+        ort_loss_offdiag = jnp.pow(cov_b[off_diag], 2).mean()
         ort_b_loss = ort_loss_diag + ort_loss_offdiag
-        
+        if len(B.shape) == 2:
+            B = B[None, ...]
+        logits = jnp.einsum('eik,ejk->ije', B, B) / jnp.sqrt(B.shape[-1]) 
+        contrastive_loss = jax.vmap(
+            lambda _logits: optax.sigmoid_binary_cross_entropy(logits=_logits, labels=I),
+            in_axes=-1,
+            out_axes=-1,
+        )(logits)
+        ort_b_loss = jnp.mean(contrastive_loss)
         total_loss = fb_loss + ort_b_loss
         
         correct_fb = jnp.argmax(M1, axis=1) == jnp.argmax(I, axis=1)
-        correct_ort = jnp.argmax(cov_b, axis=1) == jnp.argmax(I, axis=1)
+        correct_ort = jnp.argmax(logits, axis=1) == jnp.argmax(I, axis=1)
         
         return total_loss, {
             "contrastive_fb_loss": fb_loss, 
             "fb_loss": total_loss,
             "z_norm": jnp.linalg.norm(z_latent, axis=-1).mean(),
             # ORTHONORMALITY METRICS
-            #"ort_b_loss": ort_b_loss,
+            "ort_b_loss": ort_b_loss,
             # "ort_loss_diag": ort_loss_diag,
             # "ort_loss_offdiag": ort_loss_offdiag,
             "correct_ort": jnp.mean(correct_ort),
@@ -81,9 +89,11 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         Q1 = (F1 * z_latent).sum(-1)
         Q2 = (F2 * z_latent).sum(-1)
         Q = jnp.minimum(Q1, Q2)
-        actor_loss = (0.1 * log_probs - Q).mean()
+        actor_loss = (1.0 * log_probs - Q).mean()
+        #actor_loss = -Q.mean()
         return actor_loss, {
             'mean_action': actions.mean(),
+            'actor_q': Q.mean(),
             'actor_loss': actor_loss,
         }
 
@@ -156,7 +166,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         z = self.network.select('b_value')(goal=obs)
         # if rewards is not None:
         #     z = (rewards.T @ z)
-        z = self.project_z(z)
+        #z = self.project_z(z)
         return z
         
     @jax.jit
@@ -214,8 +224,11 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         # Define networks.
         forward_def = FValue(
             latent_z_dim=config['z_dim'],
+            layer_norm_only_first=config['fb_layer_norm_only_first'],
             fb_forward_hidden_dims=config['fb_forward_hidden_dims'],
             fb_forward_preprocessor_hidden_dims=config['fb_forward_preprocessor_hidden_dims'],
+            fb_forward_layer_norm=config['fb_forward_layer_norm'],
+            fb_preprocessor_layer_norm=config['fb_preprocessor_layer_norm']
         )
         backward_def = BValue(
             latent_z_dim=config['z_dim'],
@@ -257,7 +270,6 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         
         return cls(rng, network=network, config=flax.core.FrozenDict(**config))
 
-
 def get_config():
     config = ml_collections.ConfigDict(
         dict(
@@ -266,17 +278,19 @@ def get_config():
             agent_name='fb',  # Agent name.
             discrete=False,
             lr=1e-4,  # Learning rate.
-            batch_size=1024,  # Batch size.
+            batch_size=512,  # Batch size.
             # FB Specific
-            z_dim=30, # 100 for maze env, 50 for others
+            z_dim=75, # 100 for maze env, 50 for others
             fb_forward_hidden_dims=(1024, 1024),  # Value network hidden dimensions.
+            fb_layer_norm_only_first=True, # use tanh + layernorm in first layer
             fb_forward_layer_norm=True,  # Whether to use layer normalization.
-            fb_forward_preprocessor_hidden_dims=(1024, 512),
+            fb_preprocessor_layer_norm=False,
+            fb_forward_preprocessor_hidden_dims=(1024, 1024, 512),
             fb_backward_hidden_dims=(256, 256, 256),  # Value network hidden dimensions.
             fb_backward_layer_norm=True,  # Whether to use layer normalization.
             z_mix_ratio=0.5,
             # Actor
-            actor_hidden_dims=(512, 512),  # Actor network hidden dimensions.
+            actor_hidden_dims=(1024, 1024),  # Actor network hidden dimensions.
             actor_layer_norm=False,  # Whether to use layer normalization for the actor.
             # MISC
             discount=0.99,  # Discount factor. 0.99 - for maze, 0.98 others
@@ -288,8 +302,8 @@ def get_config():
             # Dataset hyperparameters.
             dataset_class='GCDataset',  # Dataset class name.
             value_p_curgoal=0.0,  # Probability of using the current state as the value goal.
-            value_p_trajgoal=1.0,  # Probability of using a future state in the same trajectory as the value goal.
-            value_p_randomgoal=0.0,  # Probability of using a random state as the value goal.
+            value_p_trajgoal=0.5,  # Probability of using a future state in the same trajectory as the value goal.
+            value_p_randomgoal=0.5,  # Probability of using a random state as the value goal.
             value_geom_sample=True,  # Whether to use geometric sampling for future value goals.
             actor_p_curgoal=0.0,  # Probability of using the current state as the actor goal.
             actor_p_trajgoal=0.0,  # Probability of using a future state in the same trajectory as the actor goal.
