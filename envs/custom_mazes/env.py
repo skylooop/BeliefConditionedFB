@@ -27,17 +27,23 @@ class BaseEnv(gym.Env, ABC):
     def get_image(self):
         pass
     
-    def render(self):
+    def render(self, ax=None, return_img=False):
         img = self.get_image()
         grid_kwargs = {'color': (220 / 255, 220 / 255, 220 / 255, 0.5)}
         img = np.asarray(img).astype(np.uint8)
-        plt.imshow(img, interpolation=None)
-        ax = plt.gca()
+        if return_img:
+            img = Image.fromarray(img) # upscale
+            img = img.resize((200, 200), Image.NEAREST)
+            return np.asarray(img)
+        
+        if ax is None:
+            ax = plt.gca()
+        ax.imshow(img, interpolation=None)
         ax.grid(0)
-        plt.xticks([])
-        plt.yticks([])
+        ax.set_xticks([])
+        ax.set_yticks([])
         h, w = img.shape[:2]
         for y in range(h - 1):
-            plt.plot([-0.5, w - 0.5], [y + 0.5, y + 0.5], **grid_kwargs)
+            ax.plot([-0.5, w - 0.5], [y + 0.5, y + 0.5], **grid_kwargs)
         for x in range(w - 1):
-            plt.plot([x + 0.5, x + 0.5], [-0.5, h - 0.5], **grid_kwargs)
+            ax.plot([x + 0.5, x + 0.5], [-0.5, h - 0.5], **grid_kwargs)

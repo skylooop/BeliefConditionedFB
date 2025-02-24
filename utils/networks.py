@@ -297,6 +297,7 @@ class GCDiscreteActor(nn.Module):
 
 class FValue(nn.Module):
     latent_z_dim: int
+    preprocess: bool
     # Forward params
     layer_norm_only_first: bool = True
     fb_forward_layer_norm: bool = False
@@ -317,11 +318,35 @@ class FValue(nn.Module):
                                                   activate_final=True, layer_norm_only_first=self.layer_norm_only_first, activations=nn.relu)
     
     def __call__(self, observations, actions, latent_z):
-        processed_sa = self.forward_preprocessor_sa(jnp.concatenate([observations, actions], -1)) #jnp.concatenate([observations, actions], -1)#
-        processed_sz = self.forward_preprocessor_sz(jnp.concatenate([observations, latent_z], -1)) # jnp.concatenate([observations, latent_z], -1)
+        if self.preprocess:
+            processed_sa = self.forward_preprocessor_sa(jnp.concatenate([observations, actions], -1))
+            processed_sz = self.forward_preprocessor_sz(jnp.concatenate([observations, latent_z], -1))
+        else:
+            processed_sa = jnp.concatenate([observations, actions], -1)
+            processed_sz = jnp.concatenate([observations, latent_z], -1)
         f1, f2 = self.forward_map(jnp.concatenate([processed_sa, processed_sz], -1))
         
         return f1, f2
+
+class FValueDiscrete(nn.Module):
+    latent_z_dim: int
+    action_dim: int
+    # Forward params
+    fb_forward_layer_norm: bool = False
+    fb_hidden_dims: Sequence[int] = (1024, 1024, 1024)
+    fb_forward_hidden_dims: Sequence[int] = (1024, )
+    
+    def setup(self):
+        mlp_module = MLP
+        forward_mlp_module = ensemblize(MLP, 2)
+        self.forward_map = forward_mlp_module((*self.fb_forward_hidden_dims,self.latent_z_dim * self.action_dim), activate_final=False,
+                                      layer_norm=self.fb_forward_layer_norm, layer_norm_only_first=False, activations=nn.relu)
+        self.hidden_mlp = mlp_module((*self.fb_hidden_dims, ), layer_norm=self.fb_forward_layer_norm, activate_final=True, layer_norm_only_first=True, activations=nn.relu )
+        
+    def __call__(self, observations, latent_z):
+        processed_sz = jnp.concatenate([observations, latent_z], -1)
+        f1, f2 = self.forward_map(processed_sz)        
+        return f1.reshape(-1, self.latent_z_dim, self.action_dim), f2.reshape(-1, self.latent_z_dim, self.action_dim)
 
 class BValue(nn.Module):
     latent_z_dim: int

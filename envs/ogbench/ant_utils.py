@@ -206,7 +206,6 @@ def policy_image(env, dataset, N, M, action_fn=None, **kwargs):
     plt.close(fig)
     return image
 
-
 def most_squarelike(n):
     c = int(n ** 0.5)
     while c > 0:

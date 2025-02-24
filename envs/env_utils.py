@@ -7,6 +7,7 @@ from gymnasium.spaces import Box
 
 import ogbench
 from utils.datasets import Dataset, GCDataset
+from envs.ogbench.ant_utils import MazeVizWrapper
 
 class EpisodeMonitor(gymnasium.Wrapper):
     """Environment wrapper to monitor episode statistics."""
@@ -106,19 +107,26 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5):
     if 'ogbench' in dataset_name:
         dataset_name = "-".join(dataset_name.split("-")[1:])
         env, train_dataset, val_dataset = ogbench.make_env_and_datasets(dataset_name, compact_dataset=False)
-        
-        # train_dataset['observations'] = normalize_data(train_dataset['observations'])
-        # train_dataset['next_observations'] = normalize_data(train_dataset['next_observations'])
-        
-        # val_dataset['observations'] = normalize_data(val_dataset['observations'])
-        # val_dataset['next_observations'] = normalize_data(val_dataset['next_observations'])
-        
+
         eval_env = ogbench.make_env_and_datasets(dataset_name, env_only=True)
         env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
         eval_env = EpisodeMonitor(eval_env, filter_regexes=['.*privileged.*', '.*proprio.*'])
+        eval_env = MazeVizWrapper(eval_env) # for visualizations
+        
         train_dataset = Dataset.create(**train_dataset)
         val_dataset = Dataset.create(**val_dataset)
-
+        
+    if 'fourrooms' in dataset_name:
+        from envs.custom_mazes.darkroom import FourRoomsMazeEnv, Maze
+        
+        env = FourRoomsMazeEnv(Maze(maze_type='fourrooms', size=dataset_name.split("-")[-1]))
+        eval_env = FourRoomsMazeEnv(Maze(maze_type='fourrooms', size=dataset_name.split("-")[-1]))
+        env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
+        eval_env = EpisodeMonitor(eval_env, filter_regexes=['.*privileged.*', '.*proprio.*'])
+        train_dataset = np.load("aux_data/fourroom_data.npy", allow_pickle=True)[()]
+        train_dataset = Dataset.create(**train_dataset)
+        val_dataset = train_dataset
+        
     if frame_stack is not None:
         env = FrameStackWrapper(env, frame_stack)
         eval_env = FrameStackWrapper(eval_env, frame_stack)

@@ -1,6 +1,7 @@
 from collections import defaultdict
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 from tqdm import trange
 
@@ -94,6 +95,85 @@ def evaluate(
                     render.append(np.concatenate([goal_frame, frame], axis=0))
                 else:
                     render.append(frame)
+
+            transition = dict(
+                observation=observation,
+                next_observation=next_observation,
+                action=action,
+                reward=reward,
+                done=done,
+                info=info,
+            )
+            add_to(traj, transition)
+            observation = next_observation
+        if i < num_eval_episodes:
+            add_to(stats, flatten(info))
+            trajs.append(traj)
+        else:
+            renders.append(np.array(render))
+
+    for k, v in stats.items():
+        stats[k] = np.mean(v)
+
+    return stats, trajs, renders
+
+
+def evaluate_fourrooms(
+    agent,
+    env,
+    task_id=None,
+    config=None,
+    num_eval_episodes=50,
+    num_video_episodes=0,
+    video_frame_skip=3,
+    eval_temperature=0.0,
+    eval_gaussian=None,
+):
+    """Evaluate the agent in the environment.
+
+    Args:
+        agent: Agent.
+        env: Environment.
+        task_id: Task ID to be passed to the environment.
+        config: Configuration dictionary.
+        num_eval_episodes: Number of episodes to evaluate the agent.
+        num_video_episodes: Number of episodes to render. These episodes are not included in the statistics.
+        video_frame_skip: Number of frames to skip between renders.
+        eval_temperature: Action sampling temperature.
+        eval_gaussian: Standard deviation of the Gaussian noise to add to the actions.
+
+    Returns:
+        A tuple containing the statistics, trajectories, and rendered videos.
+    """
+    actor_fn = supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32)))
+    trajs = []
+    stats = defaultdict(list)
+    pbar = trange(num_eval_episodes + num_video_episodes, leave=False, colour='red', position=2)
+    renders = []
+    for i in pbar:
+        traj = defaultdict(list)
+        should_render = i >= num_eval_episodes
+        observation, info = env.setup_goals(seed=None, task_num=task_id)
+        goal = info.get("goal_pos", None)
+        done = False
+        step = 0
+        render = []
+        latent_z = agent.infer_z(jnp.asarray(goal))
+        while not done:
+            action = actor_fn(observations=observation, latent_z=latent_z, temperature=eval_temperature)
+            action = np.array(action)
+            if not config.get('discrete'):
+                if eval_gaussian is not None:
+                    action = np.random.normal(action, eval_gaussian)
+                action = np.clip(action, -1, 1)
+
+            next_observation, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            step += 1
+
+            if should_render and (step % video_frame_skip == 0 or done):
+                frame = env.render(return_img=True).copy()
+                render.append(frame)
 
             transition = dict(
                 observation=observation,
