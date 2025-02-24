@@ -37,22 +37,21 @@ FLAGS = flags.FLAGS
 flags.DEFINE_bool('disable_jit', True, 'Disable jit.')
 flags.DEFINE_string('run_group', 'Debug', 'Run group.')
 flags.DEFINE_integer('seed', 0, 'Random seed.')
-flags.DEFINE_string('env_name', 'ogbench-pointmaze-medium-stitch-v0', 'Environment (dataset) name.')
-#flags.DEFINE_string('env_name', 'maze-fourrooms-11', 'Environment (dataset) name.')
+# flags.DEFINE_string('env_name', 'ogbench-pointmaze-medium-stitch-v0', 'Environment (dataset) name.')
+flags.DEFINE_string('env_name', 'maze-fourrooms-11', 'Environment (dataset) name.')
 flags.DEFINE_string('save_dir', 'experiment_logs/', 'Save directory.')
 flags.DEFINE_string('restore_path', None, 'Restore path.')
 flags.DEFINE_integer('restore_epoch', None, 'Restore epoch.')
 
 flags.DEFINE_integer('train_steps', 1_000_000, 'Number of online steps.')
 
-flags.DEFINE_integer('buffer_size', 2_000_000, 'Replay buffer size.')
 flags.DEFINE_integer('log_interval', 5_000, 'Logging interval.')
-flags.DEFINE_integer('eval_interval', 100_000, 'Evaluation interval.')
+flags.DEFINE_integer('eval_interval', 10_000, 'Evaluation interval.')
 flags.DEFINE_integer('save_interval', 1000000, 'Saving interval.')
 
 flags.DEFINE_integer('eval_tasks', None, 'Number of online steps.')
-flags.DEFINE_float('eval_temperature', 0, 'Number of online steps.')
-flags.DEFINE_integer('eval_episodes', 50, 'Number of evaluation episodes.')
+flags.DEFINE_float('eval_temperature', 0.3, 'Number of online steps.')
+flags.DEFINE_integer('eval_episodes', 1, 'Number of evaluation episodes.')
 flags.DEFINE_integer('video_episodes', 1, 'Number of video episodes for each task.')
 flags.DEFINE_integer('video_frame_skip', 3, 'Frame skip for videos.')
 flags.DEFINE_float('eval_gaussian', None, 'Action Gaussian noise for evaluation.')
@@ -61,19 +60,21 @@ flags.DEFINE_integer('frame_stack', None, 'Number of frames to stack.')
 
 config_flags.DEFINE_config_file('agent', 'agents/fb.py', lock_config=False)
 
+# def parse_wandb_absl(wandb_cfg, absl_cfg):
+#     for 
 
 def main():
     os.makedirs(FLAGS.save_dir, exist_ok=True)
-    config = FLAGS.agent
-    pprint(config.to_dict())
-    
     key = jax.random.key(FLAGS.seed)
     exp_name = get_exp_name(FLAGS.seed)
+    config = FLAGS.agent    
+    # pprint(config.to_dict())
+    
+    run = setup_wandb(project='ZeroShotRL', group=FLAGS.run_group, name=exp_name, mode="offline" if FLAGS.disable_jit else "online")#, config=config)
+    
     env, eval_env, train_dataset, val_dataset = make_env_and_datasets(dataset_name=FLAGS.env_name,
                                                                       frame_stack=FLAGS.frame_stack,
                                                                       action_clip_eps=1e-5 if not config['discrete'] else None)
-    
-    setup_wandb(project='ZeroShotRL', group=FLAGS.run_group, name=exp_name, mode="offline" if FLAGS.disable_jit else "online") # offline for debug
     dataset_class = {
         'GCDataset': GCDataset,
         #'HGCDataset': HGCDataset,
@@ -187,37 +188,35 @@ def main():
                 wandb.log(eval_metrics, step=step)
                 eval_logger.log(eval_metrics, step=step)
         
-        if 'fourrooms' in FLAGS.env_name:
-            num_tasks = 4
-            for task_id in tqdm(range(1, num_tasks + 1), leave=False, position=1, colour='blue'):
-                eval_info, trajs, cur_renders = evaluate_fourrooms(
-                    agent=agent,
-                    env=env,
-                    task_id=task_id,
-                    config=config,
-                    num_eval_episodes=FLAGS.eval_episodes,
-                    num_video_episodes=FLAGS.video_episodes,
-                    video_frame_skip=FLAGS.video_frame_skip,
-                    eval_temperature=FLAGS.eval_temperature,
-                    eval_gaussian=FLAGS.eval_gaussian,
-                )
-                renders.extend(cur_renders)
-                metric_names = ['success']
-                eval_metrics.update(
-                    {f'evaluation/{task_name}_{k}': v for k, v in eval_info.items() if k in metric_names}
-                )
-                for k, v in eval_info.items():
-                    if k in metric_names:
-                        overall_metrics[k].append(v)
-                
-                if FLAGS.env_name.split("-")[1] in ['antmaze', 'pointmaze']:
-                    observation, info = eval_env.reset(options=dict(task_id=task_id, render_goal=True))
-                    goal = info.get('goal_pos')
+            if 'fourrooms' in FLAGS.env_name:
+                num_tasks = 4
+                for task_id in tqdm(range(1, num_tasks + 1), leave=False, position=1, colour='blue'):
+                    eval_info, trajs, cur_renders = evaluate_fourrooms(
+                        agent=agent,
+                        env=env,
+                        task_id=task_id,
+                        config=config,
+                        num_eval_episodes=FLAGS.eval_episodes,
+                        num_video_episodes=FLAGS.video_episodes,
+                        video_frame_skip=FLAGS.video_frame_skip,
+                        eval_temperature=FLAGS.eval_temperature,
+                        eval_gaussian=FLAGS.eval_gaussian,
+                    )
+                    renders.extend(cur_renders)
+                    metric_names = ['success']
+                    eval_metrics.update(
+                        {f'evaluation/{task_name}_{k}': v for k, v in eval_info.items() if k in metric_names}
+                    )
+                    for k, v in eval_info.items():
+                        if k in metric_names:
+                            overall_metrics[k].append(v)
+                    
+                    observation, info = env.setup_goals(seed=None, task_num=task_id)
+                    goal = info.get("goal_pos", None)
                     start = eval_env.start
-                    #goal_rendered = info.get('goal_rendered')
                     latent_z = jax.device_get(agent.infer_z(goal)[None])
                     N, M = eval_env.maze.size
-                    latent_z = np.tile(latent_z, (N * M, 1))
+                    # latent_z = np.tile(latent_z, (N * M, 1))
                     pred_value_img = value_image_fourrooms(eval_env, example_batch, N=N, M=M,
                                                 value_fn=partial(agent.predict_q, z=latent_z), goal=goal)
                     # pred_policy_img = policy_image(eval_env, example_batch, N=N, M=M,
@@ -225,16 +224,16 @@ def main():
                     #                             goal=goal, start=start)
                     eval_metrics[f'draw_Q/draw_value_task_{task_id}'] = wandb.Image(pred_value_img)
                     #eval_metrics[f'draw_policy/draw_policy_task_{task_id}'] = wandb.Image(pred_policy_img)
-            
-            for k, v in overall_metrics.items():
-                eval_metrics[f'evaluation/overall_{k}'] = np.mean(v)
+                
+                for k, v in overall_metrics.items():
+                    eval_metrics[f'evaluation/overall_{k}'] = np.mean(v)
 
-            if FLAGS.video_episodes > 0:
-                video = get_wandb_video(renders=renders, n_cols=num_tasks)
-                eval_metrics['video'] = video
+                if FLAGS.video_episodes > 0:
+                    video = get_wandb_video(renders=renders, n_cols=num_tasks)
+                    eval_metrics['video'] = video
 
-            wandb.log(eval_metrics, step=step)
-            eval_logger.log(eval_metrics, step=step)
+                wandb.log(eval_metrics, step=step)
+                eval_logger.log(eval_metrics, step=step)
             
     train_logger.close()
     eval_logger.close()

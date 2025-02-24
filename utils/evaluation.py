@@ -158,7 +158,7 @@ def evaluate_fourrooms(
         done = False
         step = 0
         render = []
-        latent_z = agent.infer_z(jnp.asarray(goal))
+        latent_z = agent.infer_z(goal)
         while not done:
             action = actor_fn(observations=observation, latent_z=latent_z, temperature=eval_temperature)
             action = np.array(action)
@@ -167,12 +167,12 @@ def evaluate_fourrooms(
                     action = np.random.normal(action, eval_gaussian)
                 action = np.clip(action, -1, 1)
 
-            next_observation, reward, terminated, truncated, info = env.step(action)
+            next_observation, reward, terminated, truncated, info = env.step(jax.device_get(action.squeeze()))
             done = terminated or truncated
             step += 1
 
             if should_render and (step % video_frame_skip == 0 or done):
-                frame = env.render(return_img=True).copy()
+                frame = env.unwrapped.render(return_img=True).copy()
                 render.append(frame)
 
             transition = dict(

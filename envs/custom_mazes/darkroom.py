@@ -54,7 +54,7 @@ class FourRoomsMazeEnv(BaseEnv):
         self.start = start_idx
         self.step_count = 0
         self.maze_state = self.maze.to_value()
-        return start_idx, {"goal_pos": goal_idx}
+        return np.array(start_idx), {"goal_pos": np.array(goal_idx)}
     
     def setup_goals(self, seed: int, task_num=None):
         goal_list = [(2, 2), (2, 9),
@@ -101,7 +101,7 @@ class FourRoomsMazeEnv(BaseEnv):
         self.maze_state = self.maze.to_value()
         if self.step_count >= 200:
             done = True
-        return new_position, reward, done, False, {}
+        return np.array(new_position), reward, done, False, {}
         
     def visualize_goals(self):
         fig, ax = plt.subplots(nrows=2, ncols=2)

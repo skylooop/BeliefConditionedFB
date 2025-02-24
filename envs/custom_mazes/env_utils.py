@@ -9,6 +9,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.gridspec as gridspec
 from functools import partial
+import jax
 
 def get_canvas_image(canvas):
     canvas.draw() 
@@ -35,26 +36,17 @@ def value_image_fourrooms(env, dataset, value_fn, N, M, action_fn=None, **kwargs
 def plot_value_image_fourrooms(env, dataset, value_fn, N=11, M=11, fig=None, ax=None, title=None, **kwargs):
     if fig is None or ax is None:
         fig, ax = plt.subplots()
-        
-    coverage_map = np.where(env.maze_state == 1, -1000, env.maze_state)
     
-    base_observation = np.copy(dataset['observations'][0])
-    base_observations = np.tile(base_observation, (N * M, 1))
-    values = value_fn(base_observations)
-    x = x.reshape(N, M)
-    y = y.reshape(N, M)
-
-    values = values.reshape(N, M)
-    mesh = ax.pcolormesh(x, y, values, cmap='viridis')
-    plt.imshow(coverage_map, cmap='inferno', vmin=0)
-    ax = plt.gca()
-    
+    coverage_map = np.where(env.maze.maze_grid == 1, -1000, env.maze.maze_grid)
+    for (x, y), value in np.ndenumerate(coverage_map):
+        if value == 0:
+            coverage_map[x, y] = jax.device_get(value_fn(np.concatenate([[x], [y]], -1)).max(-1)[0])
     divider = make_axes_locatable(ax)
     cax = divider.append_axes('right', size='5%', pad=0.05)
-    fig.colorbar(mesh, cax=cax, orientation='vertical')
+    im = ax.imshow(coverage_map, cmap='inferno', vmin=-200)
+    fig.colorbar(im, cax=cax, orientation='vertical')
     goal = kwargs.get('goal', None)
     if goal is not None:
         ax.set_title('Goal: ({:.2f}, {:.2f})'.format(goal[0], goal[1])) 
-        ax.scatter(goal[0], goal[1], s=80, c='black', marker='*')
-    
-    
+        ax.scatter(goal[1], goal[0], s=80, c='black', marker='*')
+    return fig, ax
