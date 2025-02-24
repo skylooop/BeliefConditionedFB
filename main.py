@@ -30,7 +30,7 @@ from utils.evaluation import evaluate, evaluate_fourrooms, flatten, supply_rng
 # from utils.flax_utils import restore_agent, save_agent
 from utils.log_utils import CsvLogger, get_exp_name, get_wandb_video, setup_wandb
 from envs.ogbench.ant_utils import policy_image, value_image
-from envs.custom_mazes.env_utils import value_image_fourrooms
+from envs.custom_mazes.env_utils import value_image_fourrooms, policy_image_fourrooms
 
 FLAGS = flags.FLAGS
 
@@ -216,14 +216,13 @@ def main():
                     start = eval_env.start
                     latent_z = jax.device_get(agent.infer_z(goal)[None])
                     N, M = eval_env.maze.size
-                    # latent_z = np.tile(latent_z, (N * M, 1))
                     pred_value_img = value_image_fourrooms(eval_env, example_batch, N=N, M=M,
                                                 value_fn=partial(agent.predict_q, z=latent_z), goal=goal)
-                    # pred_policy_img = policy_image(eval_env, example_batch, N=N, M=M,
-                    #                             action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.3),
-                    #                             goal=goal, start=start)
+                    pred_policy_img = policy_image_fourrooms(eval_env, example_batch, N=N, M=M,
+                                                action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.3),
+                                                goal=goal, start=start)
                     eval_metrics[f'draw_Q/draw_value_task_{task_id}'] = wandb.Image(pred_value_img)
-                    #eval_metrics[f'draw_policy/draw_policy_task_{task_id}'] = wandb.Image(pred_policy_img)
+                    eval_metrics[f'draw_policy/draw_policy_task_{task_id}'] = wandb.Image(pred_policy_img)
                 
                 for k, v in overall_metrics.items():
                     eval_metrics[f'evaluation/overall_{k}'] = np.mean(v)

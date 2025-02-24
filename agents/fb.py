@@ -333,25 +333,25 @@ def get_config():
             # https://arxiv.org/pdf/2309.15178
             agent_name='fb',  # Agent name.
             discrete=True,
-            lr=2e-4,  # Learning rate.
+            lr=1e-4,  # Learning rate.
             batch_size=1024,  # Batch size.
             # FB Specific
-            z_dim=75, # 100 for maze env, 50 for others
-            fb_forward_hidden_dims=(512, 512, 512),  # Value network hidden dimensions.
+            z_dim=50, # 100 for maze env, 50 for others
+            fb_forward_hidden_dims=(1024, 1024),  # Value network hidden dimensions.
             fb_layer_norm_only_first=True, # use tanh + layernorm in first layer
             fb_forward_layer_norm=False,  # Whether to use layer normalization.
             fb_preprocessor_layer_norm=False,
-            fb_forward_preprocessor_hidden_dims=(256, 256),
+            fb_forward_preprocessor_hidden_dims=(512, 512),
             fb_backward_hidden_dims=(256, 256, 256),  # Value network hidden dimensions.
             fb_backward_layer_norm=False,  # Whether to use layer normalization.
             z_mix_ratio=0.5,
             # Actor
-            actor_hidden_dims=(512, 512, 512),  # Actor network hidden dimensions.
+            actor_hidden_dims=(1024, 1024),  # Actor network hidden dimensions.
             actor_layer_norm=False,  # Whether to use layer normalization for the actor.
             boltzmann=False, # TODO: add later maybe?
             # MISC
             discount=0.99,  # Discount factor. 0.99 - for maze, 0.98 others
-            tau=0.01,  # Target network update rate.
+            tau=0.005,  # Target network update rate.
             tanh_squash=True,  # Whether to squash actions with tanh.
             state_dependent_std=False,  # Whether to use state-dependent standard deviations for actor.
             actor_fc_scale=0.01,  # Final layer initialization scale for actor.

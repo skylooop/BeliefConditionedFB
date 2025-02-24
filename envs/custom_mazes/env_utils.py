@@ -17,6 +17,42 @@ def get_canvas_image(canvas):
     out_image = out_image.reshape(canvas.get_width_height()[::-1] + (3,))
     return out_image
 
+def policy_image_fourrooms(env, dataset, N, M, action_fn=None, **kwargs):
+    fig = plt.figure(tight_layout=True)
+    canvas = FigureCanvas(fig)
+    plot_policy(env, dataset, N, M, fig=fig, ax=plt.gca(), action_fn=action_fn, **kwargs)
+    image = get_canvas_image(canvas)
+    plt.close(fig)
+    return image
+
+def plot_policy(env, dataset, N=14, M=20, fig=None, ax=None, random=False, title=None, action_fn=None, **kwargs):
+    action_names = [
+            r'$\uparrow$', r'$\downarrow$', r'$\leftarrow$', r'$\rightarrow$'# r'$\cdot$'
+        ]
+    if fig is None or ax is None:
+        fig, ax = plt.subplots()
+        
+    coverage_map = np.where(env.maze.maze_grid == 1, -1000, env.maze.maze_grid)
+    ax = env.plot_grid()
+    for (x, y), value in np.ndenumerate(coverage_map):
+        if value == 0:
+            action = action_fn(np.concatenate([[x], [y]], -1)).squeeze()
+            action_name = action_names[action]
+            plt.text(x, y, action_name, ha='center', va='center', fontsize='large', color='green')
+ 
+    goal = kwargs.get('goal', None)
+    start = kwargs.get('start', None)
+    if goal is not None:
+        ax.set_title('Goal: ({:.2f}, {:.2f})'.format(goal[0], goal[1])) 
+        ax.scatter(goal[1], goal[0], s=80, c='black', marker='*')
+
+    if start is not None:
+        ax.scatter(start[1], start[0], s=80, c='orange', marker='o')
+        
+    if title:
+        ax.set_title(title)
+        
+    return fig, ax
 def value_image_fourrooms(env, dataset, value_fn, N, M, action_fn=None, **kwargs):
     """
     Visualize the value function.
