@@ -26,14 +26,14 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             next_dist = self.network.select('actor')(batch['next_observations'], z_latent)
             next_actions = next_dist.sample(seed=sample_rng)
             target_F1, target_F2 = self.network.select('target_f_value')(batch['next_observations'], next_actions, z_latent)
-            target_B = self.network.select('target_b_value')(batch['next_observations']) #(batch['next_observations'])
+            target_B = self.network.select('target_b_value')(batch['next_observations'])
             target_M1 = target_F1 @ target_B.T
             target_M2 = target_F2 @ target_B.T
             target_M = jnp.minimum(target_M1, target_M2)
             
             # Cur M
             F1, F2 = self.network.select('f_value')(batch['observations'], batch['actions'], z_latent, params=grad_params)
-            B = self.network.select('b_value')(batch['next_observations'], params=grad_params) #(batch['next_observations'], params=grad_params)
+            B = self.network.select('b_value')(batch['next_observations'], params=grad_params)
             M1 = F1 @ B.T
             M2 = F2 @ B.T
         else:
@@ -119,7 +119,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         Q1 = (F1 * z_latent).sum(-1)
         Q2 = (F2 * z_latent).sum(-1)
         Q = jnp.minimum(Q1, Q2)
-        actor_loss = (1.0 * log_probs - Q).mean()
+        actor_loss = (0.1 * log_probs - Q).mean()
         #actor_loss = -Q.mean()
         return actor_loss, {
             'mean_action': actions.mean(),
@@ -185,7 +185,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
     def sample_mixed_z(self, batch, latent_dim, key):
         batch_size = batch['observations'].shape[0]
         z = self.sample_z(batch_size, latent_dim, key)
-        b_goals = self.network.select('b_value')(goal=batch['actor_goals'])
+        b_goals = self.network.select('b_value')(goal=batch['next_observations']) # batch['value_goals'] - First exp
         mask = jax.random.uniform(key, shape=(batch_size, 1)) < self.config['z_mix_ratio']
         z = jnp.where(mask, b_goals, z)
         return z
@@ -294,6 +294,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
                 action_dim=action_dim,
                 tanh_squash=config['tanh_squash'],
                 state_dependent_std=config['state_dependent_std'],
+                actor_preprocessor_hidden_dims=config['actor_preprocessor_hidden_dims'],
                 const_std=config['const_std'],
                 final_fc_init_scale=config['actor_fc_scale'],
             )
@@ -339,7 +340,7 @@ def get_config():
             z_dim=50, # 100 for maze env, 50 for others
             fb_forward_hidden_dims=(1024, 1024),  # Value network hidden dimensions.
             fb_layer_norm_only_first=True, # use tanh + layernorm in first layer
-            fb_forward_layer_norm=False,  # Whether to use layer normalization.
+            fb_forward_layer_norm=True,  # Whether to use layer normalization.
             fb_preprocessor_layer_norm=False,
             fb_forward_preprocessor_hidden_dims=(512, 512),
             fb_backward_hidden_dims=(256, 256, 256),  # Value network hidden dimensions.
