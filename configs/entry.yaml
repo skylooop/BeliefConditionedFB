@@ -1,0 +1,24 @@
+defaults:
+  - _self_
+  - agent: fb
+  - env: gridworld/maze-fourrooms-11 #ogbench/ogbench-pointmaze-medium-stitch-v0 #gridworld/maze-fourrooms-11
+
+# MISC
+seed: 42
+run_group: ${agent.agent_name}
+save_dir: experiment_logs/
+
+# RL
+train_steps: 1_000_000
+log_interval: 5_000
+eval_interval: 100_000
+eval_tasks: null
+eval_episodes: 1 # 50 for true eval
+eval_temperature: 0
+eval_gaussian: null
+video_episodes: 1
+video_frame_skip: 3
+eval_on_cpu: 0
+# 
+frame_stack: null
+p_aug: null

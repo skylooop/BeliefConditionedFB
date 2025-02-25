@@ -31,7 +31,8 @@ def plot_policy(env, dataset, N=14, M=20, fig=None, ax=None, random=False, title
         ]
     if fig is None or ax is None:
         fig, ax = plt.subplots()
-        
+    
+    # TODO: fix
     coverage_map = np.where(env.maze.maze_grid == 1, -1000, env.maze.maze_grid)
     ax = env.plot_grid()
     for (x, y), value in np.ndenumerate(coverage_map):

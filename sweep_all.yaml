@@ -1,0 +1,18 @@
+program: main.py
+
+method: random
+
+metric:
+  name: evaluation/overall_success
+  goal: maximize
+
+parameters:
+  agent.z_dim:
+    values: [1, 2]
+  
+command:
+  - ${env}
+  - python
+  - ${program}
+  - "--disable_jit=False"
+  - ${args_no_hyphens}

@@ -121,9 +121,8 @@ class FourRoomsMazeEnv(BaseEnv):
         wall_y, wall_x = np.where(self.maze.maze_grid <= -1)
         for i in range(len(wall_y)):
             img[wall_y[i], wall_x[i]] = np.array(asbestos)
-
-        plt.imshow(img, interpolation=None)
         ax = plt.gca()
+        ax.imshow(img, interpolation=None)
         ax.grid(0)
         plt.xticks([])
         plt.yticks([])
@@ -140,4 +139,4 @@ class FourRoomsMazeEnv(BaseEnv):
             plt.plot([-0.5, w - 0.5], [y + 0.5, y + 0.5], **grid_kwargs)
         for x in range(w - 1):
             plt.plot([x + 0.5, x + 0.5], [-0.5, h - 0.5], **grid_kwargs)
-        return ax
+        return ax#, img
