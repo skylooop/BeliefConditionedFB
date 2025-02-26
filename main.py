@@ -140,16 +140,15 @@ def main(cfg: DictConfig):
                         observation, info = eval_env.reset(options=dict(task_id=task_id, render_goal=True))
                         goal = info.get('goal')
                         start = eval_env.get_xy()
-                        #goal_rendered = info.get('goal_rendered')
                         latent_z = jax.device_get(agent.infer_z(goal)[None])
                         N, M = 14, 20
                         latent_z = np.tile(latent_z, (N * M, 1))
                         pred_value_img = value_image(eval_env, example_batch, N=N, M=M,
                                                     value_fn=partial(agent.predict_q, z=latent_z),
-                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.05),
+                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.1),
                                                     goal=goal)
                         pred_policy_img = policy_image(eval_env, example_batch, N=N, M=M,
-                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.05),
+                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.1),
                                                     goal=goal, start=start)
                         eval_metrics[f'draw_Q/draw_value_task_{task_id}'] = wandb.Image(pred_value_img)
                         eval_metrics[f'draw_policy/draw_policy_task_{task_id}'] = wandb.Image(pred_policy_img)
@@ -195,7 +194,7 @@ def main(cfg: DictConfig):
                     pred_value_img = value_image_fourrooms(eval_env, example_batch, N=N, M=M,
                                                 value_fn=partial(agent.predict_q, z=latent_z), goal=goal)
                     pred_policy_img = policy_image_fourrooms(eval_env, example_batch, N=N, M=M,
-                                                action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.3),
+                                                action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.0),
                                                 goal=goal, start=start)
                     eval_metrics[f'draw_Q/draw_value_task_{task_id}'] = wandb.Image(pred_value_img)
                     eval_metrics[f'draw_policy/draw_policy_task_{task_id}'] = wandb.Image(pred_policy_img)

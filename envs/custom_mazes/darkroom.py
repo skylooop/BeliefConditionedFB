@@ -114,14 +114,13 @@ class FourRoomsMazeEnv(BaseEnv):
     def get_image(self):
         return self.maze.to_rgb()
 
-    def plot_grid(self, add_start=True):
-        asbestos = (9, 22, 22, 0.8)
+    def plot_grid(self, ax, add_start=True):
+        asbestos = (0.2, 0.2, 0.2, 1.0)
         grid_kwargs = {'color': (220 / 255, 220 / 255, 220 / 255, 0.5)}
         img = np.ones((self.maze.maze_grid.shape[0], self.maze.maze_grid.shape[1], 4))
-        wall_y, wall_x = np.where(self.maze.maze_grid <= -1)
+        wall_y, wall_x = np.where(self.maze.maze_grid == 1)
         for i in range(len(wall_y)):
             img[wall_y[i], wall_x[i]] = np.array(asbestos)
-        ax = plt.gca()
         ax.imshow(img, interpolation=None)
         ax.grid(0)
         plt.xticks([])

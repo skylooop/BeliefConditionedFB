@@ -19,7 +19,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
     def fb_loss(self, batch, z_latent, grad_params, rng):
         rng, sample_rng = jax.random.split(rng)
     
-        # z_latent = jax.lax.stop_gradient(z_latent)
+        z_latent = jax.lax.stop_gradient(z_latent)
         # Target M for continuous actor
         if not self.config['discrete']:
             # Target M
@@ -80,7 +80,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         ort_b_loss = ort_loss_diag + ort_loss_offdiag
         if len(B.shape) == 2:
             B = B[None, ...]
-        logits = jnp.einsum('eik,ejk->ije', B, B) / jnp.sqrt(B.shape[-1]) 
+        logits = jnp.einsum('eik,ejk->ije', B, B)# / jnp.sqrt(B.shape[-1]) 
         contrastive_loss = jax.vmap(
             lambda _logits: optax.sigmoid_binary_cross_entropy(logits=_logits, labels=I),
             in_axes=-1,
@@ -119,7 +119,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         Q1 = (F1 * z_latent).sum(-1)
         Q2 = (F2 * z_latent).sum(-1)
         Q = jnp.minimum(Q1, Q2)
-        actor_loss = (0.1 * log_probs - Q).mean()
+        actor_loss = (0.3 * log_probs - Q).mean()
         #actor_loss = -Q.mean()
         return actor_loss, {
             'mean_action': actions.mean(),
@@ -185,7 +185,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
     def sample_mixed_z(self, batch, latent_dim, key):
         batch_size = batch['observations'].shape[0]
         z = self.sample_z(batch_size, latent_dim, key)
-        b_goals = self.network.select('b_value')(goal=batch['next_observations']) # batch['value_goals'] - First exp
+        b_goals = self.network.select('b_value')(goal=batch['actor_goals'])
         mask = jax.random.uniform(key, shape=(batch_size, 1)) < self.config['z_mix_ratio']
         z = jnp.where(mask, b_goals, z)
         return z
@@ -193,7 +193,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
     @jax.jit
     def infer_z(self, obs, rewards=None):
         """
-        If reards are None -> treat as goal-conditioned
+        If rewards are None -> treat as goal-conditioned
         """    
         z = self.network.select('b_value')(goal=obs)
         # if rewards is not None:
@@ -364,8 +364,8 @@ def get_config():
             value_p_randomgoal=0.5,  # Probability of using a random state as the value goal.
             value_geom_sample=True,  # Whether to use geometric sampling for future value goals.
             actor_p_curgoal=0.0,  # Probability of using the current state as the actor goal.
-            actor_p_trajgoal=0.0,  # Probability of using a future state in the same trajectory as the actor goal.
-            actor_p_randomgoal=1.0,  # Probability of using a random state as the actor goal.
+            actor_p_trajgoal=0.5,  # Probability of using a future state in the same trajectory as the actor goal.
+            actor_p_randomgoal=0.5,  # Probability of using a random state as the actor goal.
             actor_geom_sample=False,  # Whether to use geometric sampling for future actor goals.
             gc_negative=True,  # Whether to use '0 if s == g else -1' (True) or '1 if s == g else 0' (False) as reward.
             p_aug=0.0,  # Probability of applying image augmentation.

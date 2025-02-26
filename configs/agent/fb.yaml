@@ -8,34 +8,35 @@ discrete: ${env.discrete}
 
 # FB Specific
 z_dim: 100 # 100 for maze env, 50 for others
-fb_forward_hidden_dims: [1024, 1024]  # Value network hidden dimensions.
+fb_forward_hidden_dims: [1024]  # Value network hidden dimensions.
 fb_layer_norm_only_first: True # use tanh + layernorm in first layer
 fb_forward_layer_norm: True  # Whether to use layer normalization.
-fb_preprocessor_layer_norm: False
-fb_forward_preprocessor_hidden_dims: [1024, 512]
+fb_preprocessor_layer_norm: True
+fb_forward_preprocessor_hidden_dims: [1024, 1024, 512]
 fb_backward_hidden_dims: [256, 256, 256]  # Value network hidden dimensions.
-fb_backward_layer_norm: False  # Whether to use layer normalization.
+fb_backward_layer_norm: True  # Whether to use layer normalization.
 z_mix_ratio: 0.5
 
 # Actor
 actor_hidden_dims: [1024, 1024]  # Actor network hidden dimensions.
-actor_preprocessor_hidden_dims: [1024, 512]  # Actor network hidden dimensions.
-actor_layer_norm: False  # Whether to use layer normalization for the actor.
+actor_preprocessor_hidden_dims: [1024, 1024, 512]  # Actor network hidden dimensions.
+actor_layer_norm: True  # Whether to use layer normalization for the actor.
 boltzmann: False # TODO: add later maybe?
+tanh_squash: True  # Whether to squash actions with tanh.
+state_dependent_std: True  # Whether to use state-dependent standard deviations for actor.
+actor_fc_scale: 0.01  # Final layer initialization scale for actor.
+const_std: False
+
 
 # MISC
 discount: 0.99  # Discount factor. 0.99 - for maze, 0.98 others
 tau: 0.01  # Target network update rate.
-tanh_squash: True  # Whether to squash actions with tanh.
-state_dependent_std: False  # Whether to use state-dependent standard deviations for actor.
-actor_fc_scale: 0.01  # Final layer initialization scale for actor.
-const_std: True
 
 # Dataset hyperparameters.
 dataset_class: GCDataset  # Dataset class name.
 value_p_curgoal: 0.0  # Probability of using the current state as the value goal.
-value_p_trajgoal: 0.5  # Probability of using a future state in the same trajectory as the value goal.
-value_p_randomgoal: 0.5  # Probability of using a random state as the value goal.
+value_p_trajgoal: 1.0  # Probability of using a future state in the same trajectory as the value goal.
+value_p_randomgoal: 0.0  # Probability of using a random state as the value goal.
 value_geom_sample: True  # Whether to use geometric sampling for future value goals.
 actor_p_curgoal: 0.0  # Probability of using the current state as the actor goal.
 actor_p_trajgoal: 0.0  # Probability of using a future state in the same trajectory as the actor goal.

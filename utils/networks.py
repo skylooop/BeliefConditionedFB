@@ -408,7 +408,7 @@ class FBActor(nn.Module):
     hidden_dims: Sequence[int]
     actor_preprocessor_hidden_dims: Sequence[int]
     action_dim: int
-    log_std_min: Optional[float] = -5
+    log_std_min: Optional[float] = -2 #-5
     log_std_max: Optional[float] = 2
     tanh_squash: bool = True
     state_dependent_std: bool = False
@@ -445,7 +445,7 @@ class FBActor(nn.Module):
             log_stds = self.log_std_net(outputs)
         else:
             if self.const_std:
-                log_stds = jnp.zeros_like(means) * 0.2 # TODO: Make as input to builder, from metamotivo paper
+                log_stds = jnp.zeros_like(means)
             else:
                 log_stds = self.log_stds
 

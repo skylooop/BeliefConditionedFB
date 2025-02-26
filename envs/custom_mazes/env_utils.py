@@ -34,7 +34,7 @@ def plot_policy(env, dataset, N=14, M=20, fig=None, ax=None, random=False, title
     
     # TODO: fix
     coverage_map = np.where(env.maze.maze_grid == 1, -1000, env.maze.maze_grid)
-    ax = env.plot_grid()
+    ax = env.plot_grid(ax=ax)
     for (x, y), value in np.ndenumerate(coverage_map):
         if value == 0:
             action = action_fn(np.concatenate([[x], [y]], -1)).squeeze()
