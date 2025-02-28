@@ -304,7 +304,8 @@ class FValue(nn.Module):
     fb_preprocessor_layer_norm: bool = False
     fb_forward_hidden_dims: Sequence[int] = (1024, )
     fb_forward_preprocessor_hidden_dims: Sequence[int] = (1024, 512)
-
+    activate_final: bool = False
+    
     def setup(self):
         mlp_module = MLP
         forward_mlp_module = ensemblize(MLP, 2)
@@ -312,7 +313,7 @@ class FValue(nn.Module):
                                       layer_norm=self.fb_forward_layer_norm, layer_norm_only_first=self.layer_norm_only_first, activations=nn.relu)
         
         self.forward_preprocessor_sa = mlp_module(hidden_dims=self.fb_forward_preprocessor_hidden_dims, layer_norm=self.fb_preprocessor_layer_norm,
-                                                  activate_final=True, layer_norm_only_first=self.layer_norm_only_first, activations=nn.relu)
+                                                  activate_final=False, layer_norm_only_first=self.layer_norm_only_first, activations=nn.relu)
         
         self.forward_preprocessor_sz = mlp_module(hidden_dims=self.fb_forward_preprocessor_hidden_dims, layer_norm=self.fb_preprocessor_layer_norm,
                                                   activate_final=True, layer_norm_only_first=self.layer_norm_only_first, activations=nn.relu)

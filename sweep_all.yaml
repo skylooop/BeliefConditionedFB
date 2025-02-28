@@ -8,9 +8,9 @@ metric:
 
 parameters:
   agent.z_dim:
-    values: [15, 25, 50, 75, 100]
+    values: [100, 128, 150]
   agent.lr:
-    values: [1e-4, 2e-4, 3e-4]
+    values: [1e-4, 3e-4]
   agent.tau:
     values: [0.01, 0.005]
   
@@ -19,4 +19,5 @@ command:
   - python
   - ${program}
   - "--disable_jit=False"
+  - "experiment=cont.yaml"
   - ${args_no_hyphens}

@@ -19,7 +19,6 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
     def fb_loss(self, batch, z_latent, grad_params, rng):
         rng, sample_rng = jax.random.split(rng)
         
-        z_latent = jax.lax.stop_gradient(z_latent)
         # Target M for continuous actor
         if not self.config['discrete']:
             # Target M
@@ -87,7 +86,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         # Orthonormality loss
         cov_b = B @ B.T
         ort_loss_diag = -2 * jnp.diag(cov_b).mean()
-        ort_loss_offdiag = (cov_b[off_diag]).mean()
+        ort_loss_offdiag = (cov_b[off_diag] ** 2).mean()
         ort_b_loss = ort_loss_diag + ort_loss_offdiag
         total_loss = fb_loss + ort_b_loss
         
@@ -131,8 +130,8 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         Q1 = (F1 * z_latent).sum(-1)
         Q2 = (F2 * z_latent).sum(-1)
         Q = jnp.minimum(Q1, Q2)
-        Q_loss = -Q.mean() / jax.lax.stop_gradient(jnp.abs(Q).mean() + 1e-6)
-        bc_loss = -(1.0 * log_probs).mean()
+        Q_loss = -Q.mean()# / jax.lax.stop_gradient(jnp.abs(Q).mean() + 1e-6)
+        bc_loss = (1.0 * log_probs).mean()
         actor_loss = Q_loss + bc_loss
         return actor_loss, {
             'q_loss': Q_loss,
@@ -231,7 +230,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         else:
             latent_z = jnp.atleast_2d(latent_z)
             Q = self.predict_q(observations, latent_z)
-            actions = jnp.argmax(jax.nn.softmax(Q / temperature, axis=-1))
+            actions = jnp.argmax(Q, axis=-1)#actions = jnp.argmax(jax.nn.softmax(Q / temperature, axis=-1))
             
         return actions
 
@@ -286,7 +285,8 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
                 fb_forward_hidden_dims=config['fb_forward_hidden_dims'],
                 fb_forward_preprocessor_hidden_dims=config['fb_forward_preprocessor_hidden_dims'],
                 fb_forward_layer_norm=config['fb_forward_layer_norm'],
-                fb_preprocessor_layer_norm=config['fb_preprocessor_layer_norm']
+                fb_preprocessor_layer_norm=config['fb_preprocessor_layer_norm'],
+                activate_final=config['fb_activate_final']
         )
         else:
             forward_def = FValueDiscrete(

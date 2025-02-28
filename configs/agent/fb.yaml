@@ -1,5 +1,3 @@
-# Most of hyperparams from zero-shot rl from high-quality data
-# https://arxiv.org/pdf/2309.15178
 agent_name: fb
 
 lr: 3e-4
@@ -13,6 +11,7 @@ fb_layer_norm_only_first: False # use tanh + layernorm in first layer
 fb_forward_layer_norm: True  # Whether to use layer normalization.
 fb_preprocessor_layer_norm: True
 fb_forward_preprocessor_hidden_dims: [1024, 1024, 512]
+fb_activate_final: False
 fb_backward_hidden_dims: [256, 256]  # Value network hidden dimensions.
 fb_backward_layer_norm: True  # Whether to use layer normalization.
 z_mix_ratio: 0.5
@@ -21,7 +20,7 @@ z_mix_ratio: 0.5
 actor_hidden_dims: [1024, 1024]  # Actor network hidden dimensions.
 actor_preprocessor_hidden_dims: [1024, 1024, 512]  # Actor network hidden dimensions.
 actor_layer_norm: True  # Whether to use layer normalization for the actor.
-boltzmann: True # TODO: add later maybe?
+boltzmann: False 
 tanh_squash: True  # Whether to squash actions with tanh.
 state_dependent_std: True  # Whether to use state-dependent standard deviations for actor.
 actor_fc_scale: 0.01  # Final layer initialization scale for actor.

@@ -47,6 +47,7 @@ def main(cfg: DictConfig):
     config = OmegaConf.to_container(cfg, resolve=True)
     # config = FLAGS.agent 
     pprint(config)
+    exit()
     run = setup_wandb(project='ZeroShotRL', group=config['run_group'], name=exp_name, mode="offline" if FLAGS.disable_jit else "online", config=config)
     env, eval_env, train_dataset, val_dataset = make_env_and_datasets(dataset_name=config['env']['env_name'],
                                                                       frame_stack=config['agent']['frame_stack'],
