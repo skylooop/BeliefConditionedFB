@@ -47,7 +47,6 @@ def main(cfg: DictConfig):
     config = OmegaConf.to_container(cfg, resolve=True)
     # config = FLAGS.agent 
     pprint(config)
-    exit()
     run = setup_wandb(project='ZeroShotRL', group=config['run_group'], name=exp_name, mode="offline" if FLAGS.disable_jit else "online", config=config)
     env, eval_env, train_dataset, val_dataset = make_env_and_datasets(dataset_name=config['env']['env_name'],
                                                                       frame_stack=config['agent']['frame_stack'],
@@ -164,8 +163,8 @@ def main(cfg: DictConfig):
                 wandb.log(eval_metrics, step=step)
                 eval_logger.log(eval_metrics, step=step)
         
-            if 'fourrooms' in config['env']['env_name']:
-                num_tasks = 4
+            if 'fourrooms' or 'gridworld' in config['env']['env_name']:
+                num_tasks = env.maze.num_tasks
                 for task_id in tqdm(range(1, num_tasks + 1), leave=False, position=1, colour='blue'):
                     eval_info, trajs, cur_renders = evaluate_fourrooms(
                         agent=agent,

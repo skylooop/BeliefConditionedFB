@@ -30,7 +30,7 @@ agent:
   tanh_squash: True  # Whether to squash actions with tanh.
   state_dependent_std: True  # Whether to use state-dependent standard deviations for actor.
   actor_fc_scale: 0.01  # Final layer initialization scale for actor.
-  const_std: True
+  const_std: False
 
   # MISC
   discount: 0.98  # Discount factor. 0.99 - for maze, 0.98 others

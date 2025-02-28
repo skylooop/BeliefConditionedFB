@@ -127,6 +127,17 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5):
         train_dataset = Dataset.create(**train_dataset)
         val_dataset = train_dataset
         
+    if 'gridworld' in dataset_name:
+        from envs.custom_mazes.darkroom import FourRoomsMazeEnv, Maze
+        
+        env = FourRoomsMazeEnv(Maze(maze_type='gridworld', size=dataset_name.split("-")[-1]))
+        eval_env = FourRoomsMazeEnv(Maze(maze_type='gridworld', size=dataset_name.split("-")[-1]))
+        env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
+        eval_env = EpisodeMonitor(eval_env, filter_regexes=['.*privileged.*', '.*proprio.*'])
+        train_dataset = np.load("aux_data/gridworld_data.npy", allow_pickle=True)[()]
+        train_dataset = Dataset.create(**train_dataset)
+        val_dataset = train_dataset
+        
     if frame_stack is not None:
         env = FrameStackWrapper(env, frame_stack)
         eval_env = FrameStackWrapper(eval_env, frame_stack)

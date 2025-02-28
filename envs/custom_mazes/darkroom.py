@@ -2,6 +2,8 @@ import numpy as np
 
 from envs.custom_mazes import BaseMaze, BaseEnv, Object, DeepMindColor as color
 from envs.custom_mazes.generators.four_room import generate_four_room_env
+from envs.custom_mazes.generators.gridworld import gridworld
+
 from envs.custom_mazes.motion import VonNeumannMotion
 from gymnasium.spaces import Discrete, Dict, Box
 import matplotlib.pyplot as plt
@@ -10,6 +12,12 @@ class Maze(BaseMaze):
     def __init__(self, maze_type: str='fourrooms', size: str = '11', **kwargs):
         if maze_type == 'fourrooms':
             self.maze_grid = generate_four_room_env(int(size), int(size))
+            self.num_tasks = 4
+        elif maze_type == "gridworld":
+            self.maze_grid = gridworld()
+            self.num_tasks = 2 # TODO: currently hardcoded
+            
+        self.maze_type = maze_type
         super().__init__(**kwargs)
         
     @property
@@ -57,8 +65,11 @@ class FourRoomsMazeEnv(BaseEnv):
         return np.array(start_idx), {"goal_pos": np.array(goal_idx)}
     
     def setup_goals(self, seed: int, task_num=None):
-        goal_list = [(2, 2), (2, 9),
-                      (8, 8), (8, 2)]
+        if self.maze.maze_type == "fourrooms":
+            goal_list = [(2, 2), (2, 9),
+                        (8, 8), (8, 2)]
+        elif self.maze.maze_type == "gridworld":
+            goal_list = [(3,2), (3,7)]
         if task_num is None:
             random_goal = goal_list[np.random.randint(len(goal_list)) - 1]
         else:
