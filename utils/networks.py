@@ -67,7 +67,7 @@ class MLP(nn.Module):
     """
 
     hidden_dims: Sequence[int]
-    activations: Any = nn.relu #nn.gelu
+    activations: Any = nn.relu
     activate_final: bool = False
     kernel_init: Any = default_init()
     layer_norm: bool = False
@@ -98,7 +98,7 @@ class LengthNormalize(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        return jax.lax.stop_gradient(jnp.sqrt(x.shape[-1]) * x / jnp.linalg.norm(x, axis=-1, keepdims=True))
+        return x * jnp.sqrt(x.shape[-1]) / (jnp.linalg.norm(x, axis=-1, keepdims=True) + 1e-12)
 
 
 class Param(nn.Module):
@@ -337,11 +337,9 @@ class FValueDiscrete(nn.Module):
     fb_forward_layer_norm: bool = False
     
     def setup(self):
-        mlp_module = MLP
         forward_mlp_module = ensemblize(MLP, 2)
-        self.forward_map = forward_mlp_module((*self.fb_forward_hidden_dims,self.latent_z_dim * self.action_dim), activate_final=False,
+        self.forward_map = forward_mlp_module((*self.fb_forward_hidden_dims, self.latent_z_dim * self.action_dim), activate_final=False,
                                       layer_norm=self.fb_forward_layer_norm, layer_norm_only_first=False, activations=nn.relu)
-        self.hidden_mlp = mlp_module((*self.fb_hidden_dims, ), layer_norm=self.fb_forward_layer_norm, activate_final=True, layer_norm_only_first=True, activations=nn.relu )
         
     def __call__(self, observations, latent_z):
         processed_sz = jnp.concatenate([observations, latent_z], -1)
@@ -353,11 +351,12 @@ class BValue(nn.Module):
     # Backward params
     fb_backward_hidden_dims: Sequence[int] = (256, 256)
     fb_backward_layer_norm: bool = False
+    layer_norm_first: bool = False
     
     def setup(self):
         mlp_module = MLP
         self.backward_map = mlp_module((*self.fb_backward_hidden_dims, self.latent_z_dim), activate_final=False,
-                                        layer_norm=self.fb_backward_layer_norm, layer_norm_only_first=True, activations=nn.relu)
+                                        layer_norm=self.fb_backward_layer_norm, layer_norm_only_first=False, activations=nn.relu)
         self.project_onto = LengthNormalize()
         
     def __call__(self, goal):

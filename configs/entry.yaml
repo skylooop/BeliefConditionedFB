@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - agent: fb
-  - env: ogbench/ogbench-pointmaze-medium-stitch-v0 #ogbench/ogbench-pointmaze-medium-stitch-v0 #gridworld/maze-fourrooms-11
+  - env: gridworld/maze-fourrooms-11 #ogbench/ogbench-pointmaze-medium-stitch-v0 #gridworld/maze-fourrooms-11
 
 # MISC
 seed: 1337

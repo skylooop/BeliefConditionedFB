@@ -162,7 +162,7 @@ class GCDataset:
     - value_geom_sample: Whether to use geometric sampling for future value goals.
     - actor_p_curgoal: Probability of using the current state as the actor goal.
     - actor_p_trajgoal: Probability of using a future state in the same trajectory as the actor goal.
-    - actor_p_randomgoal: Probability of using a random state as the actor goal.
+    - c: Probability of using a random state as the actor goal.
     - actor_geom_sample: Whether to use geometric sampling for future actor goals.
     - gc_negative: Whether to use '0 if s == g else -1' (True) or '1 if s == g else 0' (False) as the reward.
     - p_aug: Probability of applying image augmentation.

@@ -138,19 +138,23 @@ class TrainState(flax.struct.PyTreeNode):
 
         grad_max = jax.tree_util.tree_map(jnp.max, grads)
         grad_min = jax.tree_util.tree_map(jnp.min, grads)
+        grad_mean = jax.tree_util.tree_map(jnp.mean, grads)
         grad_norm = jax.tree_util.tree_map(jnp.linalg.norm, grads)
 
         grad_max_flat = jnp.concatenate([jnp.reshape(x, -1) for x in jax.tree_util.tree_leaves(grad_max)], axis=0)
         grad_min_flat = jnp.concatenate([jnp.reshape(x, -1) for x in jax.tree_util.tree_leaves(grad_min)], axis=0)
+        grad_mean_flat = jnp.concatenate([jnp.reshape(x, -1) for x in jax.tree_util.tree_leaves(grad_mean)], axis=0)
         grad_norm_flat = jnp.concatenate([jnp.reshape(x, -1) for x in jax.tree_util.tree_leaves(grad_norm)], axis=0)
 
         final_grad_max = jnp.max(grad_max_flat)
         final_grad_min = jnp.min(grad_min_flat)
+        final_grad_mean = jnp.mean(grad_mean_flat)
         final_grad_norm = jnp.linalg.norm(grad_norm_flat, ord=1)
 
         info.update(
             {
                 'grad/max': final_grad_max,
+                'grad/mean': final_grad_mean,
                 'grad/min': final_grad_min,
                 'grad/norm': final_grad_norm,
             }
