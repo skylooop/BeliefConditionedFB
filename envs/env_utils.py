@@ -107,8 +107,8 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5):
     if 'ogbench' in dataset_name:
         dataset_name = "-".join(dataset_name.split("-")[1:])
         env, train_dataset, val_dataset = ogbench.make_env_and_datasets(dataset_name, compact_dataset=False)
-
         eval_env = ogbench.make_env_and_datasets(dataset_name, env_only=True)
+        
         env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
         eval_env = EpisodeMonitor(eval_env, filter_regexes=['.*privileged.*', '.*proprio.*'])
         eval_env = MazeVizWrapper(eval_env) # for visualizations

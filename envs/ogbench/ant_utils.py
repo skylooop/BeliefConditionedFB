@@ -21,7 +21,7 @@ class MazeVizWrapper(gymnasium.Wrapper):
     # ======== BELOW is helper stuff for drawing and visualizing ======== #
     def get_starting_boundary(self):
         torso_x, torso_y = self.unwrapped._offset_x, self.unwrapped._offset_y
-        S =  self.unwrapped._maze_unit
+        S = self.unwrapped._maze_unit
         return (0 - S / 2 + S - torso_x, 0 - S/2 + S - torso_y), (len(self.unwrapped.maze_map[0]) * S - torso_x - S/2 - S, len(self.unwrapped.maze_map) * S - torso_y - S/2 - S)
 
     def XY(self, n=20, m=30):
@@ -153,8 +153,9 @@ def plot_trajectories(env, dataset, trajectories, fig, ax, color_list=None):
 
 def get_canvas_image(canvas):
     canvas.draw() 
-    out_image = np.frombuffer(canvas.tostring_rgb(), dtype='uint8')
-    out_image = out_image.reshape(canvas.get_width_height()[::-1] + (3,))
+    # out_image = np.frombuffer(canvas.tostring_rgb(), dtype='uint8')
+    # out_image = out_image.reshape(canvas.get_width_height()[::-1] + (3,))
+    out_image = np.asarray(canvas.buffer_rgba())
     return out_image
 
 def gc_sampling_adaptor(policy_fn):

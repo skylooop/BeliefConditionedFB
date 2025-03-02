@@ -60,17 +60,18 @@ def setup_wandb(
     project='project',
     group=None,
     name=None,
+    tags=None,
     mode='online',
     config=None
 ):
     """Set up Weights & Biases for logging."""
     wandb_output_dir = tempfile.mkdtemp()
-    tags = [group] if group is not None else None
+    # tags = [group] if group is not None else None
     init_kwargs = dict(
         config=config,#get_flag_dict(),
         project=project,
         entity=entity,
-        tags=tags,
+        tags=list(tags),
         group=group,
         dir=wandb_output_dir,
         name=name,
@@ -79,7 +80,7 @@ def setup_wandb(
             _disable_stats=False,
         ),
         mode=mode,
-        save_code=True,
+        save_code=False,
     )
 
     run = wandb.init(**init_kwargs)

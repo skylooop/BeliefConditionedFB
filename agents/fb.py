@@ -108,26 +108,28 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
 
     def actor_loss(self, batch, z_latent, grad_params, rng):
         rng, sample_rng = jax.random.split(rng)
-    
+
         dist = self.network.select('actor')(batch['observations'], z_latent, params=grad_params)
-        if self.config['const_std']:
-            actions = jnp.clip(dist.mode(), -1, 1)
-        else:
-            actions, log_probs = dist.sample_and_log_prob(seed=sample_rng)
-            actions = jnp.clip(actions, -1, 1)
+        # if self.config['const_std']:
+        #     actions = jnp.clip(dist.mode(), -1, 1)
+        # else:
+        actions, log_probs = dist.sample_and_log_prob(seed=sample_rng)
+        actions = jnp.clip(actions, -1, 1)
             
         F1, F2 = self.network.select('f_value')(batch['observations'], actions, z_latent)
         Q1 = (F1 * z_latent).sum(-1)
         Q2 = (F2 * z_latent).sum(-1)
         Q = jnp.minimum(Q1, Q2)
+        
         Q_loss = -Q.mean()# / jax.lax.stop_gradient(jnp.abs(Q).mean() + 1e-6)
-        bc_loss = (1.0 * log_probs).mean()
-        actor_loss = Q_loss + bc_loss
+        entropy_bonus = (1.0 * log_probs).mean()
+        actor_loss = Q_loss + entropy_bonus
+        
         return actor_loss, {
             'q_loss': Q_loss,
-            'bc_log_prob': log_probs.mean(), 
-            'bc_loss': bc_loss,
+            'entropy_bonus': entropy_bonus, 
             'actor_loss': actor_loss,
+            'mean_action': actions.mean()
         }
 
     @jax.jit
@@ -191,7 +193,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
     def sample_mixed_z(self, batch, latent_dim, key):
         batch_size = batch['observations'].shape[0]
         z = self.sample_z(batch_size, latent_dim, key)
-        b_goals = self.network.select('b_value')(goal=batch['actor_goals']) # should be random from dataset
+        b_goals = self.network.select('b_value')(goal=batch['next_observations'])#(goal=batch['actor_goals'])
         mask = jax.random.uniform(key, shape=(batch_size, 1)) < self.config['z_mix_ratio']
         z = jnp.where(mask, z, b_goals)
         return z
@@ -274,11 +276,10 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             forward_def = FValue(
                 latent_z_dim=config['z_dim'],
                 preprocess=True,
-                f_hidden_dims=config['fb_forward_hidden_dims'],
-                f_preprocessor_hidden_dims=config['fb_forward_preprocessor_hidden_dims'],
-                fb_forward_layer_norm=config['fb_forward_layer_norm'],
-                fb_preprocessor_layer_norm=config['fb_preprocessor_layer_norm'],
-                activate_final=config['fb_activate_final']
+                f_layer_norm=config['f_layer_norm'],
+                f_preprocessor_hidden_dims=config['f_preprocessor_hidden_dims'],
+                f_hidden_dims=config['f_hidden_dims'],
+                activate_final=config['f_activate_final'],
         )
         else:
             forward_def = FValueDiscrete(
@@ -296,10 +297,12 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         if not config['discrete']:
             actor_def = FBActor(
                 hidden_dims=config['actor_hidden_dims'],
+                actor_preprocessor_layer_norm=config['actor_preprocessor_layer_norm'],
+                actor_preprocessor_activate_final=config['actor_preprocessor_activate_final'],
+                actor_preprocessor_hidden_dims=config['actor_preprocessor_hidden_dims'],
                 action_dim=action_dim,
                 tanh_squash=config['tanh_squash'],
                 state_dependent_std=config['state_dependent_std'],
-                actor_preprocessor_hidden_dims=config['actor_preprocessor_hidden_dims'],
                 const_std=config['const_std'],
                 final_fc_init_scale=config['actor_fc_scale'],
             )
@@ -321,8 +324,9 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         network_args = {k: v[1] for k, v in network_info.items()}
 
         network_def = ModuleDict(networks)
+        lr_schedule = optax.linear_schedule(init_value=3e-4, end_value=1e-4, transition_begin=150_000, transition_steps=1_000_000)
         network_tx = optax.chain(optax.clip_by_global_norm(1.0) if config['clip_by_global_norm'] else optax.identity(),
-                                 optax.adam(learning_rate=config['lr']))
+                                 optax.adam(learning_rate=lr_schedule))#=config['lr']))
         
         network_params = network_def.init(init_rng, **network_args)['params']
         network = TrainState.create(network_def, network_params, tx=network_tx)

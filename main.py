@@ -1,10 +1,10 @@
 import os
 import sys
 os.environ['MUJOCO_GL']='egl'
-# os.environ['CUDA_VISIBLE_DEVICES']='1'
+# os.environ['CUDA_VISIBLE_DEVICES']='0'
 
-import shutup
-shutup.please()
+# import shutup
+# shutup.please()
 
 import rootutils
 ROOT = rootutils.setup_root(search_from=__file__, cwd=True, pythonpath=True, indicator='requirements.txt')
@@ -46,7 +46,8 @@ def main(cfg: DictConfig):
     config = OmegaConf.to_container(cfg, resolve=True)
     # config = FLAGS.agent 
     pprint(config)
-    run = setup_wandb(project='ZeroShotRL', group=config['run_group'], name=exp_name, mode="offline" if FLAGS.disable_jit else "online", config=config)
+    run = setup_wandb(project='ZeroShotRL', group=config['run_group'], name=exp_name,
+                      mode="offline" if FLAGS.disable_jit else "online", config=config, tags=config['tags'])
     env, eval_env, train_dataset, val_dataset = make_env_and_datasets(dataset_name=config['env']['env_name'],
                                                                       frame_stack=config['agent']['frame_stack'],
                                                                       action_clip_eps=1e-5 if not config['env']['discrete'] else None)
@@ -103,7 +104,7 @@ def main(cfg: DictConfig):
             last_time = time.time()
             wandb.log(train_metrics, step=step)
             train_logger.log(train_metrics, step=step)
-        
+
         # Evaluate agent.
         if step == 1 or step % config['eval_interval'] == 0:
             renders = []
@@ -138,7 +139,7 @@ def main(cfg: DictConfig):
                     if config['env']['env_name'].split("-")[1] in ['antmaze', 'pointmaze']:
                         observation, info = eval_env.reset(options=dict(task_id=task_id, render_goal=True))
                         goal = info.get('goal')
-                        start = eval_env.get_xy()
+                        start = eval_env.unwrapped.get_xy()
                         latent_z = jax.device_get(agent.infer_z(goal)[None])
                         N, M = 14, 20
                         latent_z = np.tile(latent_z, (N * M, 1))
@@ -161,8 +162,8 @@ def main(cfg: DictConfig):
 
                 wandb.log(eval_metrics, step=step)
                 eval_logger.log(eval_metrics, step=step)
-        
-            if 'fourrooms' or 'gridworld' in config['env']['env_name']:
+            
+            if 'fourrooms' in config['env']['env_name'] or 'gridworld' in config['env']['env_name']:
                 num_tasks = env.maze.num_tasks
                 for task_id in tqdm(range(1, num_tasks + 1), leave=False, position=1, colour='blue'):
                     eval_info, trajs, cur_renders = evaluate_fourrooms(
