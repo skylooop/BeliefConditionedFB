@@ -7,13 +7,12 @@ import flax.linen as nn
 import jax.numpy as jnp
 
 from typing import Any, Optional, Sequence
-from jaxtyping import ArrayLike
 
-# def default_init(scale=1.0):
-#     """Default kernel initializer."""
-#     return nn.initializers.variance_scaling(scale, 'fan_avg', 'uniform')
+def default_init(scale=0.5):
+    """Default kernel initializer."""
+    return nn.initializers.variance_scaling(scale, 'fan_avg', 'uniform')
 
-def default_init(scale=1.0):
+def orthogonal_scaling(scale=1.0):
     return nn.initializers.orthogonal(scale)
 
 def ensemblize(cls, num_qs, out_axes=0, **kwargs):
@@ -67,28 +66,24 @@ class MLP(nn.Module):
     """
 
     hidden_dims: Sequence[int]
-    activations: Any = nn.relu
+    activations: Any = nn.gelu
     activate_final: bool = False
     kernel_init: Any = default_init()
     layer_norm: bool = False
-    layer_norm_only_first: bool = False # used with tanh
-    
+
     @nn.compact
     def __call__(self, x):
         for i, size in enumerate(self.hidden_dims):
             x = nn.Dense(size, kernel_init=self.kernel_init)(x)
             if i + 1 < len(self.hidden_dims) or self.activate_final:
-                if self.layer_norm_only_first and i == 0:
-                    x = nn.LayerNorm()(x)
+                if i == 0:
                     x = nn.tanh(x)
+                    x = nn.LayerNorm()(x)
                 else:
+                    x = self.activations(x)
                     if self.layer_norm:
                         x = nn.LayerNorm()(x)
-                    x = self.activations(x)
-                    # if self.layer_norm:
-                    #     x = nn.LayerNorm()(x)
         return x
-
 
 class LengthNormalize(nn.Module):
     """Length normalization layer.
@@ -98,7 +93,7 @@ class LengthNormalize(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        return x * jnp.sqrt(x.shape[-1]) / (jnp.linalg.norm(x, axis=-1, keepdims=True) + 1e-12)
+        return x / jnp.linalg.norm(x, axis=-1, keepdims=True) * jnp.sqrt(x.shape[-1])
 
 
 class Param(nn.Module):
@@ -332,15 +327,13 @@ class FValue(nn.Module):
 class FValueDiscrete(nn.Module):
     latent_z_dim: int
     action_dim: int
-    fb_hidden_dims: Sequence[int]
-    fb_forward_hidden_dims: Sequence[int]
-    # Forward params
-    fb_forward_layer_norm: bool = False
+    f_hidden_dims: Sequence[int]
+    f_layer_norm: bool = False
     
     def setup(self):
         forward_mlp_module = ensemblize(MLP, 2)
-        self.forward_map = forward_mlp_module((*self.fb_forward_hidden_dims, self.latent_z_dim * self.action_dim), activate_final=False,
-                                      layer_norm=self.fb_forward_layer_norm, layer_norm_only_first=False, activations=nn.relu)
+        self.forward_map = forward_mlp_module((*self.f_hidden_dims, self.latent_z_dim * self.action_dim), activate_final=False,
+                                      layer_norm=self.f_layer_norm)
         
     def __call__(self, observations, latent_z):
         processed_sz = jnp.concatenate([observations, latent_z], -1)
@@ -349,15 +342,12 @@ class FValueDiscrete(nn.Module):
 
 class BValue(nn.Module):
     latent_z_dim: int
-    # Backward params
-    fb_backward_hidden_dims: Sequence[int] = (256, 256)
-    fb_backward_layer_norm: bool = False
-    layer_norm_first: bool = False
+    b_hidden_dims: Sequence[int]
+    b_layer_norm: bool = False
     
     def setup(self):
-        mlp_module = MLP
-        self.backward_map = mlp_module((*self.fb_backward_hidden_dims, self.latent_z_dim), activate_final=False,
-                                        layer_norm=self.fb_backward_layer_norm, layer_norm_only_first=False, activations=nn.relu)
+        self.backward_map = MLP((*self.b_hidden_dims, self.latent_z_dim), activate_final=False, layer_norm=self.b_layer_norm,
+                                kernel_init=orthogonal_scaling())
         self.project_onto = LengthNormalize()
         
     def __call__(self, goal):

@@ -15,7 +15,7 @@ class Maze(BaseMaze):
             self.num_tasks = 4
         elif maze_type == "gridworld":
             self.maze_grid = gridworld()
-            self.num_tasks = 2 # TODO: currently hardcoded
+            self.num_tasks = 4 # TODO: currently hardcoded
             
         self.maze_type = maze_type
         super().__init__(**kwargs)
@@ -63,13 +63,21 @@ class FourRoomsMazeEnv(BaseEnv):
         self.step_count = 0
         self.maze_state = self.maze.to_value()
         return np.array(start_idx), {"goal_pos": np.array(goal_idx)}
+
+    def get_state_list(self):
+        state_list = []
+        for y in range(self.maze.maze_grid.shape[0]):
+            for x in range(self.maze.maze_grid.shape[1]):
+                if self.maze.maze_grid[y, x] > 0:
+                    state_list.append((x, y))
+        return state_list
     
     def setup_goals(self, seed: int, task_num=None):
         if self.maze.maze_type == "fourrooms":
             goal_list = [(2, 2), (2, 9),
                         (8, 8), (8, 2)]
         elif self.maze.maze_type == "gridworld":
-            goal_list = [(3,2), (3,7)]
+            goal_list = [(3,2), (3,7), (7, 5), (6, 8)]
         if task_num is None:
             random_goal = goal_list[np.random.randint(len(goal_list)) - 1]
         else:
@@ -104,11 +112,12 @@ class FourRoomsMazeEnv(BaseEnv):
         self.step_count += 1
         if valid:
             self.maze.objects.agent.positions = [new_position]
-        if self._is_goal(new_position):
-            reward = 1.0
-            done = True
+            if self._is_goal(new_position):
+                reward = 1.0
+                done = True
         else:
             new_position = current_position
+            
         self.maze_state = self.maze.to_value()
         if self.step_count >= 200:
             done = True

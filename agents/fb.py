@@ -9,7 +9,7 @@ import ml_collections
 import optax
 
 from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
-from utils.networks import FBActor, FValue, BValue, FValueDiscrete
+from utils.networks import FBActor, FValue, BValue, FValueDiscrete, LengthNormalize
 
 class ForwardBackwardAgent(flax.struct.PyTreeNode):
     rng: Any
@@ -48,7 +48,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
                 next_Q = jnp.einsum("sa, sa -> s", pi, next_Q)
             else:
                 next_action = next_Q.argmax(-1, keepdims=True)
-                next_idx = next_action[:, None, :].repeat(repeats=z_latent.shape[-1], axis=1).astype('int8')
+                next_idx = next_action[:, None, :].repeat(repeats=z_latent.shape[-1], axis=1).astype(jnp.int16)
                 target_F1 = jnp.take_along_axis(target_F1, next_idx, axis=-1).squeeze()
                 target_F2 = jnp.take_along_axis(target_F2, next_idx, axis=-1).squeeze()
                 next_Q = next_Q.max(-1)
@@ -57,8 +57,8 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             target_M1 = target_F1 @ target_B.T
             target_M2 = target_F2 @ target_B.T
             target_M = jnp.minimum(target_M1, target_M2)
-                
-            cur_idx = batch['actions'][:, None, :].repeat(repeats=z_latent.shape[-1], axis=1).astype('int8')
+            
+            cur_idx = batch['actions'].repeat(repeats=z_latent.shape[-1], axis=1).astype(jnp.int16)[:, :, None]
             F1, F2 = self.network.select('f_value')(batch['observations'], z_latent, params=grad_params)
             F1 = jnp.take_along_axis(F1, cur_idx, axis=-1).squeeze()
             F2 = jnp.take_along_axis(F2, cur_idx, axis=-1).squeeze()
@@ -72,19 +72,9 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         fb_offdiag = 0.5 * sum(((M - self.config['discount'] * target_M)[off_diag] ** 2).mean() for M in [M1, M2])
         fb_diag = -sum(jnp.diag(M).mean() for M in [M1, M2])
         fb_loss = fb_diag + fb_offdiag
-
-        # total_loss = 0.0
-        # if self.config['discrete']:
-        #     cov = B @ B.T
-        #     inv_cov = jnp.linalg.pinv(cov)
-        #     implicit_reward = ((B.T @ inv_cov).T * z_latent).sum(axis=1)  # batch_size
-        #     target_Q = implicit_reward + self.config['discount'] * next_Q  # batch_size
-        #     Q1, Q2 = [jnp.einsum('sd, sd -> s', Fi, z_latent) for Fi in [F1, F2]]
-        #     q_loss = ((Q1 - jax.lax.stop_gradient(target_Q))**2).mean() + ((Q2 - jax.lax.stop_gradient(target_Q))**2).mean()
-        #     total_loss += 1.0 * q_loss
         
         # Orthonormality loss
-        cov_b = B @ B.T
+        cov_b = (B @ B.T)# / jnp.sqrt(B.shape[-1])
         ort_loss_diag = -2 * jnp.diag(cov_b).mean()
         ort_loss_offdiag = (cov_b[off_diag] ** 2).mean()
         ort_b_loss = ort_loss_diag + ort_loss_offdiag
@@ -163,12 +153,12 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
 
     def target_update(self, network, module_name):
         """Update the target network."""
-        new_target_params = jax.tree.map(
+        new_target_params = jax.tree_util.tree_map(
             lambda p, tp: p * self.config['tau'] + tp * (1 - self.config['tau']),
-            network.params[f'modules_{module_name}'],
-            network.params[f'modules_target_{module_name}'],
+            self.network.params[f'modules_{module_name}'],
+            self.network.params[f'modules_target_{module_name}'],
         )
-        return new_target_params
+        network.params[f'modules_target_{module_name}'] = new_target_params
 
     @jax.jit
     def update(self, batch):
@@ -181,10 +171,13 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
 
         new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn)
         
-        new_target_params = self.target_update(new_network, 'f_value')
-        new_network.params['modules_target_f_value'] = new_target_params
-        new_target_params = self.target_update(new_network, 'b_value')
-        new_network.params['modules_target_b_value'] = new_target_params
+        # new_target_params = self.target_update(new_network, 'f_value')
+        # new_network.params['modules_target_f_value'] = new_target_params
+        # new_target_params = self.target_update(new_network, 'b_value')
+        # new_network.params['modules_target_b_value'] = new_target_params
+        
+        self.target_update(new_network, 'f_value')
+        self.target_update(new_network, 'b_value')
         
         return self.replace(network=new_network, rng=new_rng), info
 
@@ -281,9 +274,8 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             forward_def = FValue(
                 latent_z_dim=config['z_dim'],
                 preprocess=True,
-                layer_norm_only_first=config['fb_layer_norm_only_first'],
-                fb_forward_hidden_dims=config['fb_forward_hidden_dims'],
-                fb_forward_preprocessor_hidden_dims=config['fb_forward_preprocessor_hidden_dims'],
+                f_hidden_dims=config['fb_forward_hidden_dims'],
+                f_preprocessor_hidden_dims=config['fb_forward_preprocessor_hidden_dims'],
                 fb_forward_layer_norm=config['fb_forward_layer_norm'],
                 fb_preprocessor_layer_norm=config['fb_preprocessor_layer_norm'],
                 activate_final=config['fb_activate_final']
@@ -292,15 +284,13 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             forward_def = FValueDiscrete(
                 action_dim=action_dim,
                 latent_z_dim=config['z_dim'],
-                fb_forward_hidden_dims=config['fb_forward_hidden_dims'],
-                fb_hidden_dims=config['fb_forward_preprocessor_hidden_dims'],
-                fb_forward_layer_norm=config['fb_forward_layer_norm'],
+                f_hidden_dims=config['f_hidden_dims'],
+                f_layer_norm=config['f_layer_norm'],
             )
         backward_def = BValue(
             latent_z_dim=config['z_dim'],
-            fb_backward_layer_norm=config['fb_backward_layer_norm'],
-            fb_backward_hidden_dims=config['fb_backward_hidden_dims'],
-            layer_norm_first=not config['discrete']
+            b_layer_norm=config['b_layer_norm'],
+            b_hidden_dims=config['b_hidden_dims'],
         )
         actor_def = None
         if not config['discrete']:
@@ -324,20 +314,22 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             b_value=(backward_def, (ex_goals, )),
             target_b_value = (copy.deepcopy(backward_def), (ex_goals, )),
         )
-        if not config['discrete']:
+        if actor_def is not None:
             network_info.update({"actor": (actor_def, (ex_observations, latent_z))})
             
         networks = {k: v[0] for k, v in network_info.items()}
         network_args = {k: v[1] for k, v in network_info.items()}
 
         network_def = ModuleDict(networks)
-        network_tx = optax.adam(learning_rate=config['lr'])
+        network_tx = optax.chain(optax.clip_by_global_norm(1.0) if config['clip_by_global_norm'] else optax.identity(),
+                                 optax.adam(learning_rate=config['lr']))
+        
         network_params = network_def.init(init_rng, **network_args)['params']
         network = TrainState.create(network_def, network_params, tx=network_tx)
+        
         params = network.params
         params['modules_target_f_value'] = params['modules_f_value']
         params['modules_target_b_value'] = params['modules_b_value']
-        network = network.replace(params=params)
         
         return cls(rng, network=network, config=flax.core.FrozenDict(**config))
 

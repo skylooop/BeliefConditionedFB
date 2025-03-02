@@ -1,7 +1,7 @@
 import numpy as np
 
 def generate_four_room_env(width, height, number_of_space_between_wall=3):
-    maze = np.zeros((height, width), dtype=np.uint8)
+    maze = np.zeros((height, width), dtype=np.int32)
     maze[0, :] = 1 # up
     maze[-1, :] = 1 # down
     maze[:, 0] = 1 # left

@@ -4,7 +4,7 @@ defaults:
   - override /env: ogbench/ogbench-pointmaze-medium-stitch-v0
   - override /agent: fb
 
-train_steps: 2_000_000
+train_steps: 1_000_000
 
 agent:
   lr: 3e-4
@@ -17,7 +17,7 @@ agent:
   fb_forward_layer_norm: True  # Whether to use layer normalization.
   fb_preprocessor_layer_norm: True
   fb_forward_preprocessor_hidden_dims: [1024, 1024, 512]
-  fb_backward_hidden_dims: [256, 256]  # Value network hidden dimensions.
+  fb_backward_hidden_dims: [256, 256, 256]  # Value network hidden dimensions.
   fb_backward_layer_norm: True  # Whether to use layer normalization.
   z_mix_ratio: 0.5
   fb_activate_final: False
