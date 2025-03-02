@@ -171,13 +171,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         def loss_fn(grad_params):
             return self.total_loss(batch, z, grad_params, rng=rng)
 
-        new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn)
-        
-        # new_target_params = self.target_update(new_network, 'f_value')
-        # new_network.params['modules_target_f_value'] = new_target_params
-        # new_target_params = self.target_update(new_network, 'b_value')
-        # new_network.params['modules_target_b_value'] = new_target_params
-        
+        new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn)        
         self.target_update(new_network, 'f_value')
         self.target_update(new_network, 'b_value')
         
@@ -193,7 +187,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
     def sample_mixed_z(self, batch, latent_dim, key):
         batch_size = batch['observations'].shape[0]
         z = self.sample_z(batch_size, latent_dim, key)
-        b_goals = self.network.select('b_value')(goal=batch['next_observations'])#(goal=batch['actor_goals'])
+        b_goals = self.network.select('b_value')(goal=batch['actor_goals'])
         mask = jax.random.uniform(key, shape=(batch_size, 1)) < self.config['z_mix_ratio']
         z = jnp.where(mask, z, b_goals)
         return z
@@ -225,7 +219,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         else:
             latent_z = jnp.atleast_2d(latent_z)
             Q = self.predict_q(observations, latent_z)
-            actions = jnp.argmax(Q, axis=-1)#actions = jnp.argmax(jax.nn.softmax(Q / temperature, axis=-1))
+            actions = jnp.argmax(Q, axis=-1)
             
         return actions
 
