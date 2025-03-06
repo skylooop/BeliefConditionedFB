@@ -14,7 +14,5 @@ def generate_four_room_env(width, height, number_of_space_between_wall=3):
     maze[height // 2, width // 2 - number_of_space_between_wall + 1:width//2] = 1
     maze[height // 2, width//2 : width // 2 + number_of_space_between_wall] = 1
     return maze
-    # rr, cc = rectangle([1, 1], extent=[thick, t_shape[0] + thick])
-    # x[rr, cc] = 0
     
     
