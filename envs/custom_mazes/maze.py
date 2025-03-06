@@ -42,8 +42,6 @@ class BaseMaze(ABC):
         return self._convert(x, 'value')
     
     def to_rgb(self):
-        # width_px = self.size[1] * TILE_SIZE
-        # height_px = self.size[0] * TILE_SIZE
         x = np.empty((*self.size, 3), dtype=np.uint8)
         return self._convert(x, 'rgb')
     

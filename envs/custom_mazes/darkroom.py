@@ -1,7 +1,7 @@
 import numpy as np
 
 from envs.custom_mazes import BaseMaze, BaseEnv, Object, DeepMindColor as color
-from envs.custom_mazes.generators.four_room import generate_four_room_env
+from envs.custom_mazes.generators.four_room import generate_four_room_env, fourrooms_random_layouts
 from envs.custom_mazes.generators.gridworld import gridworld
 
 from envs.custom_mazes.motion import VonNeumannMotion
@@ -9,14 +9,14 @@ from gymnasium.spaces import Discrete, Dict, Box
 import matplotlib.pyplot as plt
 
 class Maze(BaseMaze):
-    def __init__(self, maze_type: str='fourrooms', size: str = '11', **kwargs):
+    def __init__(self, maze_type: str='fourrooms', size: str = 11, **kwargs):
         if maze_type == 'fourrooms':
-            self.maze_grid = generate_four_room_env(int(size), int(size))
-            self.num_tasks = 4
+            self.maze_grid = generate_four_room_env(size, size)
         elif maze_type == "gridworld":
             self.maze_grid = gridworld()
-            self.num_tasks = 4 # TODO: currently hardcoded
-            
+        elif maze_type == "fourrooms_random_layouts":
+            self.maze_grid = fourrooms_random_layouts(size, size)
+        self.num_tasks = 4
         self.maze_type = maze_type
         super().__init__(**kwargs)
         
@@ -78,6 +78,13 @@ class FourRoomsMazeEnv(BaseEnv):
                         (8, 8), (8, 2)]
         elif self.maze.maze_type == "gridworld":
             goal_list = [(3,2), (3,7), (7, 5), (6, 8)]
+        
+        elif self.maze.maze_type == "fourrooms_random_layouts":
+            goal_list = [
+                (2, 2), (2, self.maze.size[-1] - 3),
+                (self.maze.size[0] - 3, 2), (self.maze.size[0] - 3, self.maze.size[-1]-3)
+            ]
+        
         if task_num is None:
             random_goal = goal_list[np.random.randint(len(goal_list)) - 1]
         else:

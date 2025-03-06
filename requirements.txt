@@ -1,0 +1,17 @@
+# pip install -U hydra-core
+# pip install -U rootutils
+# pip install -U "jax[cuda12]"
+# pip install -U flax
+# pip install -U optax
+# pip install -U distrax
+# pip install shutup
+# pip install scikit-image
+# pip install ml_collections
+# pip install rich
+# pip install gymnasium -U
+# pip install ogbench -U
+# pip install jaxtyping
+# pip install shapely
+# pip install -U moviepy==1.0.3
+# pip install imageio
+# pip install wandb==0.18.0

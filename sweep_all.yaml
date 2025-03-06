@@ -1,6 +1,6 @@
 program: main.py
 
-method: random
+method: grid
 
 metric:
   name: evaluation/overall_success
