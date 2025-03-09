@@ -40,7 +40,9 @@ def plot_policy(env, dataset, N=14, M=20, fig=None, ax=None, random=False, title
             action = action_fn(np.concatenate([[y], [x]], -1)).squeeze()
             action_name = action_names[action]
             plt.text(x, y, action_name, ha='center', va='center', fontsize='large', color='green')
- 
+        if np.array_equal(np.array([y, x]), env.goal):
+            plt.text(x, y, '$\cdot$', ha='center', va='center', fontsize='large', color='green')
+        
     goal = kwargs.get('goal', None)
     start = kwargs.get('start', None)
     if goal is not None:

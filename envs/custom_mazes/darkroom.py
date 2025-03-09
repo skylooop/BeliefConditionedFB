@@ -5,7 +5,7 @@ from envs.custom_mazes.generators.four_room import generate_four_room_env, fourr
 from envs.custom_mazes.generators.gridworld import gridworld
 
 from envs.custom_mazes.motion import VonNeumannMotion
-from gymnasium.spaces import Discrete, Dict, Box
+from gymnasium.spaces import Discrete, Box
 import matplotlib.pyplot as plt
 
 class Maze(BaseMaze):
@@ -45,7 +45,13 @@ class FourRoomsMazeEnv(BaseEnv):
         self.goal = None
         self.start = None
         self.maze_state = self.maze.maze_grid
-        
+    
+    def map_state_to_idx(self, states):
+        return np.sum(states * np.array((self.maze_state.shape[0], 1)), axis=-1)
+    
+    def map_idx_to_state(self, index):
+        return np.stack((index // self.maze_state.shape[0], index % self.maze_state.shape[0]), axis=-1)
+    
     def reset(self, seed=None, options={}):
         super().reset(seed=seed, options=options)
         start_idx = options.get('start', None)
@@ -61,6 +67,7 @@ class FourRoomsMazeEnv(BaseEnv):
         self.goal = goal_idx
         self.start = start_idx
         self.step_count = 0
+        self.cur_pos = start_idx
         self.maze_state = self.maze.to_value()
         return np.array(start_idx), {"goal_pos": np.array(goal_idx)}
 
@@ -126,12 +133,13 @@ class FourRoomsMazeEnv(BaseEnv):
             new_position = current_position
             
         self.maze_state = self.maze.to_value()
+        self.cur_pos = new_position
         if self.step_count >= 200:
             done = True
         return np.array(new_position), reward, done, False, {}
         
     def visualize_goals(self):
-        fig, ax = plt.subplots(nrows=2, ncols=2)
+        fig, ax = plt.subplots(nrows=2, ncols=2) # currently hardcoded to 4 goals, one for each room
         for i, cur_ax in enumerate(ax.flat, start=1):
             self.setup_goals(seed=None, task_num=i)
             self.render(ax=cur_ax)
@@ -165,4 +173,4 @@ class FourRoomsMazeEnv(BaseEnv):
             plt.plot([-0.5, w - 0.5], [y + 0.5, y + 0.5], **grid_kwargs)
         for x in range(w - 1):
             plt.plot([x + 0.5, x + 0.5], [-0.5, h - 0.5], **grid_kwargs)
-        return ax#, img
+        return ax
