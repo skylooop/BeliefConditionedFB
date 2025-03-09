@@ -55,6 +55,7 @@ def main(cfg: DictConfig):
         'GCDataset': GCDataset,
         #'HGCDataset': HGCDataset,
     }[config['agent']['dataset_class']]
+    
     train_dataset = dataset_class(Dataset.create(**train_dataset), config['agent'])
     if val_dataset is not None:
         val_dataset = dataset_class(Dataset.create(**val_dataset), config['agent'])
@@ -87,9 +88,13 @@ def main(cfg: DictConfig):
     pbar = tqdm(range(1, config['train_steps'] + 1), colour='green', dynamic_ncols=True, position=0, leave=True)
     for step in pbar:
         key = jax.random.fold_in(key, step)
-        batch = train_dataset.sample(config['agent']['batch_size'])
-        agent, update_info = agent.update(batch)
-        
+        if config['agent']['agent_name'] != "dynamics_aware_fb":
+            batch = train_dataset.sample(config['agent']['batch_size'])
+            agent, update_info = agent.update(batch)
+        else:
+            batch, batch_context = train_dataset.sample(config['agent']['batch_size'])
+            agent, update_info = agent.update(batch, batch_context)
+            
         # Log metrics.
         if step % config['log_interval'] == 0 or step == 1:
             train_metrics = {f'training/{k}': v for k, v in update_info.items()}

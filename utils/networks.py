@@ -6,7 +6,9 @@ import distrax
 import flax.linen as nn
 import jax.numpy as jnp
 
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, Callable
+from flax.linen.initializers import lecun_normal, zeros
+from jaxtyping import Array, Float
 
 def default_init(scale=1.0):
     """Default kernel initializer."""
@@ -330,7 +332,7 @@ class FValueDiscrete(nn.Module):
         self.forward_map = forward_mlp_module((*self.f_hidden_dims, self.latent_z_dim * self.action_dim), activate_final=False,
                                       layer_norm=self.f_layer_norm)
         
-    def __call__(self, observations, latent_z):
+    def __call__(self, observations, latent_z, latent_context=None):
         processed_sz = jnp.concatenate([observations, latent_z], -1)
         f1, f2 = self.forward_map(processed_sz)        
         return f1.reshape(-1, self.latent_z_dim, self.action_dim), f2.reshape(-1, self.latent_z_dim, self.action_dim)
@@ -345,7 +347,7 @@ class BValue(nn.Module):
                                 kernel_init=orthogonal_scaling())
         self.project_onto = LengthNormalize()
         
-    def __call__(self, goal):
+    def __call__(self, goal, latent_context=None):
         backward = self.backward_map(goal)
         project = self.project_onto(backward)
         return project
@@ -849,3 +851,113 @@ class ActorVectorField(nn.Module):
         v = self.mlp(inputs)
 
         return v
+    
+# TRANSFORMER
+
+class MaskedCausalAttention(nn.Module):
+    h_dim: int
+    max_T: int
+    n_heads: int
+    drop_p: float = 0.1
+    dtype: Any = jnp.float32
+    kernel_init: Callable[..., Any] = lecun_normal()
+    bias_init: Callable[..., Any] = zeros
+    deterministic: bool = False if drop_p > 0.0 else True
+
+    def setup(self):
+        self.mask = jnp.tril(
+            jnp.ones((self.max_T, self.max_T))).reshape(1, 1, self.max_T, self.max_T)
+
+    @nn.compact
+    def __call__(self, input):
+        B, T, C = input.shape # batch size, seq length, h_dim * n_heads
+        N, D = self.n_heads, C // self.n_heads # N = num heads, D = attention dim
+
+        q = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)(input).reshape(B, T, N, D).transpose(0, 2, 1, 3)
+        k = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)(input).reshape(B, T, N, D).transpose(0, 2, 1, 3)
+        v = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)(input).reshape(B, T, N, D).transpose(0, 2, 1, 3)
+        weights = q @ k.transpose(0, 1, 3, 2) / jnp.sqrt(D)
+        weights = jnp.where(self.mask[..., :T, :T], weights, -jnp.inf)
+        # normalize weights, all -inf -> 0 after softmax
+        normalized_weights = jax.nn.softmax(weights, axis=-1)
+        
+        attention = normalized_weights @ v
+        # attention = nn.Dropout(
+        #     rate=self.drop_p,
+        #     deterministic=self.deterministic)(normalized_weights @ v)
+        attention = attention.transpose(0, 2, 1, 3).reshape(B, T, N*D)
+        projection = nn.Dense(self.h_dim, kernel_init=self.kernel_init)
+        #out = nn.Dropout(rate=self.drop_p, deterministic=self.deterministic)(projection)
+        return projection
+        
+class Block(nn.Module):
+    h_dim: int
+    max_T: int
+    n_heads: int
+    drop_p: float = 0.9
+    dtype: Any = jnp.float32
+    kernel_init: Callable[..., Any] = lecun_normal()
+    bias_init: Callable[..., Any] = zeros
+    deterministic: bool = False if drop_p > 0.0 else True
+    
+    @nn.compact
+    def __call__(self, input: Float[Array, "bs {2}*context_len h_dim"]):
+        input = input + MaskedCausalAttention(h_dim=self.h_dim,
+            max_T=self.max_T,
+            n_heads=self.n_heads,
+            drop_p=self.drop_p)(input)
+        input = nn.LayerNorm()(input)
+        
+        mlp1 = nn.Dense(self.h_dim * 4, kernel_init=self.kernel_init)(input)
+        mlp1 = nn.gelu(mlp1)
+        mlp2 = nn.Dense(self.h_dim, kernel_init=self.kernel_init)(mlp1)
+        
+        out = mlp2 + input
+        out = nn.LayerNorm()(out)
+        return out
+    
+class DynamicsTransformer(nn.Module):
+    """
+    The goal of context-identifier transformer is to provide a latent conditional variable,
+    which is passed into F and B modules
+    """
+    state_dim: int
+    act_dim: int
+    n_blocks: int
+    h_dim: int  # h_dim = z_dim
+    context_len: int
+    n_heads: int
+    drop_p: float
+    dtype: Any = jnp.float32
+    kernel_init: Callable[..., Any] = lecun_normal()
+
+    def setup(self):
+        self.input_seq_len = 3 * self.context_len # state x action; maybe later add z
+        self.project_obs = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
+        self.project_acts = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
+        self.pre_layernorm = nn.LayerNorm()
+        self.context_final_emb = nn.Dense(self.h_dim)
+        
+    def __call__(self, states: Float[Array, "bs context_len dim"],
+                 actions: Float[Array, "bs context_len dim"],
+                 latent_z: Float[Array, "bs z_dim"] = None):
+        B, T, _ = states.shape
+        latent_z = jnp.repeat(latent_z, repeats=(1, T, 1))
+        states = self.project_obs(states)
+        acts = self.project_acts(actions)
+        h = jnp.stack(
+            (states, acts, latent_z), axis=1
+        ).transpose(0, 2, 1, 3).reshape(B, 3 * T, self.h_dim)
+        h = self.pre_layernorm(h)
+        
+        for _ in range(self.n_blocks):
+            h = Block(
+                h_dim=self.h_dim,
+                max_T=self.input_seq_len,
+                n_heads=self.n_heads,
+                drop_p=self.drop_p)(h)
+        
+        h = h.reshape(B, T, 3, self.h_dim).transpose(0, 2, 1, 3)
+        context_embedding = self.context_final_emb(h[:, 2])
+        return context_embedding
+        

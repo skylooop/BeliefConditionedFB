@@ -2,7 +2,7 @@
 
 defaults:
   - override /env: gridworld/gridworld
-  - override /agent: fb
+  - override /agent: dynamics_aware_fb
 
 train_steps: 1_000_000
 # For debug
@@ -15,9 +15,16 @@ agent:
   batch_size: 1024
 
   # FB Specific
-  z_dim: 150
+  z_dim: &z_dim 150
   z_mix_ratio: 0.5
   boltzmann: True
+
+  # Transformer
+  n_blocks: 4
+  n_heads: 4
+  h_dim: *z_dim
+  context_len: 1024
+
   # F Network
   f_hidden_dims: [512, 512, 512]  # Value network hidden dimensions.
   f_layer_norm: True  # Whether to use layer normalization.

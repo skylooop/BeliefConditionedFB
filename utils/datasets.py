@@ -202,7 +202,17 @@ class GCDataset:
                 stacked_observations = self.get_stacked_observations(np.arange(self.size))
                 self.dataset = Dataset(self.dataset.copy(dict(observations=stacked_observations)))
 
-    def sample(self, batch_size: int, idxs=None, evaluation=False):
+    def filter_by_layout(self, layout_label):
+        """Filter the dataset to only include transitions from the specified layout."""
+        # Get indices corresponding to the specified layout
+        layout_mask = self.dataset['layout_type'] == layout_label
+        filtered_idxs = np.nonzero(layout_mask)[0]
+
+        # Create a new dataset containing only the filtered indices
+        filtered_data = self.dataset.get_subset(filtered_idxs)
+        return Dataset.create(**filtered_data)
+        
+    def sample(self, batch_size: int, idxs=None, evaluation=False, layout_type=None, context_length=None):
         """Sample a batch of transitions with goals.
 
         This method samples a batch of transitions with goals (value_goals and actor_goals) from the dataset. They are
@@ -214,10 +224,15 @@ class GCDataset:
             idxs: Indices of the transitions to sample. If None, random indices are sampled.
             evaluation: Whether to sample for evaluation. If True, image augmentation is not applied.
         """
-        if idxs is None:
-            idxs = self.dataset.get_random_idxs(batch_size)
+        if layout_type is not None:
+            filtered_dataset = self.filter_by_layout(layout_type)
+        else:
+            filtered_dataset = self.dataset
 
-        batch = self.dataset.sample(batch_size, idxs)
+        if idxs is None:
+            idxs = filtered_dataset.get_random_idxs(batch_size)
+
+        batch = filtered_dataset.sample(batch_size, idxs)
         if self.config['frame_stack'] is not None:
             batch['observations'] = self.get_observations(idxs)
             batch['next_observations'] = self.get_observations(idxs + 1)
@@ -246,7 +261,13 @@ class GCDataset:
         if self.config['p_aug'] is not None and not evaluation:
             if np.random.rand() < self.config['p_aug']:
                 self.augment(batch, ['observations', 'next_observations', 'value_goals', 'actor_goals'])
-
+        
+        #for dynamics-aware FB context 
+        if layout_type is not None:
+            idxs = filtered_dataset.get_random_idxs(context_length * batch_size)
+            context_batch = filtered_dataset.sample(context_length * batch_size, idxs)
+            context_batch = jax.tree.map(lambda x: x.reshape(batch_size, context_length, -1), context_batch)
+            return batch, context_batch
         return batch
 
     def sample_goals(self, idxs, p_curgoal, p_trajgoal, p_randomgoal, geom_sample):
