@@ -886,7 +886,7 @@ class MaskedCausalAttention(nn.Module):
         #     rate=self.drop_p,
         #     deterministic=self.deterministic)(normalized_weights @ v)
         attention = attention.transpose(0, 2, 1, 3).reshape(B, T, N*D)
-        projection = nn.Dense(self.h_dim, kernel_init=self.kernel_init)
+        projection = nn.Dense(self.h_dim, kernel_init=self.kernel_init)(attention)
         #out = nn.Dropout(rate=self.drop_p, deterministic=self.deterministic)(projection)
         return projection
         
@@ -921,8 +921,6 @@ class DynamicsTransformer(nn.Module):
     The goal of context-identifier transformer is to provide a latent conditional variable,
     which is passed into F and B modules
     """
-    state_dim: int
-    act_dim: int
     n_blocks: int
     h_dim: int  # h_dim = z_dim
     context_len: int
@@ -937,12 +935,16 @@ class DynamicsTransformer(nn.Module):
         self.project_acts = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
         self.pre_layernorm = nn.LayerNorm()
         self.context_final_emb = nn.Dense(self.h_dim)
+        self.block_module = Block(h_dim=self.h_dim,
+                max_T=self.input_seq_len,
+                n_heads=self.n_heads,
+                drop_p=self.drop_p)
         
     def __call__(self, states: Float[Array, "bs context_len dim"],
                  actions: Float[Array, "bs context_len dim"],
-                 latent_z: Float[Array, "bs z_dim"] = None):
+                 latent_z: Float[Array, "bs 1 z_dim"] = None):
         B, T, _ = states.shape
-        latent_z = jnp.repeat(latent_z, repeats=(1, T, 1))
+        latent_z = jnp.repeat(latent_z, repeats=T, axis=1)
         states = self.project_obs(states)
         acts = self.project_acts(actions)
         h = jnp.stack(
@@ -951,11 +953,7 @@ class DynamicsTransformer(nn.Module):
         h = self.pre_layernorm(h)
         
         for _ in range(self.n_blocks):
-            h = Block(
-                h_dim=self.h_dim,
-                max_T=self.input_seq_len,
-                n_heads=self.n_heads,
-                drop_p=self.drop_p)(h)
+            h = self.block_module(h)
         
         h = h.reshape(B, T, 3, self.h_dim).transpose(0, 2, 1, 3)
         context_embedding = self.context_final_emb(h[:, 2])

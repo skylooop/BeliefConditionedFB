@@ -21,7 +21,7 @@ agent:
 
   # Transformer
   n_blocks: 4
-  n_heads: 4
+  n_heads: 5
   h_dim: *z_dim
   context_len: 1024
 
