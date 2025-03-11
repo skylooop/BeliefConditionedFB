@@ -24,6 +24,7 @@ agent:
   n_heads: 5
   h_dim: *z_dim
   context_len: 1024
+  number_of_meta_envs: 10
 
   # F Network
   f_hidden_dims: [512, 512, 512]  # Value network hidden dimensions.

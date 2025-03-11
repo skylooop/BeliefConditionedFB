@@ -935,14 +935,16 @@ class DynamicsTransformer(nn.Module):
     context_len: int
     n_heads: int
     drop_p: float
+    num_layouts: int
     dtype: Any = jnp.float32
     kernel_init: Callable[..., Any] = lecun_normal()
-    num_layouts: int = 5
     
     def setup(self):
         self.input_seq_len = 3 * self.context_len # state x action; maybe later add z
         self.project_obs = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
         self.project_acts = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
+        self.project_layout = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
+        
         self.pre_layernorm = nn.LayerNorm()
         self.context_final_emb = nn.Dense(self.h_dim)
         self.block_module = Block(h_dim=self.h_dim,
@@ -954,22 +956,22 @@ class DynamicsTransformer(nn.Module):
     def __call__(self, states: Float[Array, "bs context_len dim"],
                  actions: Float[Array, "bs context_len dim"],
                 #  latent_z: Float[Array, "bs 1 z_dim"] = None,
-                # layout_type,
+                layout_type,
                  predict_type: bool = True):
         B, T, _ = states.shape
         # latent_z = jnp.repeat(latent_z, repeats=T, axis=1)
         states = self.project_obs(states)
         acts = self.project_acts(actions)
-        
+        layout_type = self.project_layout(layout_type)
         h = jnp.stack(
-            (states, acts), axis=1
-        ).transpose(0, 2, 1, 3).reshape(B, 2 * T, self.h_dim)
+            (states, acts, layout_type), axis=1
+        ).transpose(0, 2, 1, 3).reshape(B, 3 * T, self.h_dim)
         h = self.pre_layernorm(h)
         
         for _ in range(self.n_blocks):
             h = self.block_module(h)
         
-        h = h.reshape(B, T, 2, self.h_dim).transpose(0, 2, 1, 3)
+        h = h.reshape(B, T, 3, self.h_dim).transpose(0, 2, 1, 3)
         context_embedding = self.context_final_emb(h[:, 2]) # predict based on context and s, a
         if predict_type:
             return self.classification_head(context_embedding)
