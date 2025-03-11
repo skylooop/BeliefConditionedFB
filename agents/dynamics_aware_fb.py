@@ -328,7 +328,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
         network_def = ModuleDict(networks)
         # lr_schedule = add cosine scheduler
         network_tx = optax.chain(optax.clip_by_global_norm(1.0) if config['clip_by_global_norm'] else optax.identity(),
-                                 optax.adamw(learning_rate=config['lr'], b1=0.9, b2=0.99))#=config['lr']))
+                                 optax.adamw(learning_rate=config['lr'], b1=0.9, b2=0.99, weight_decay=0.01))#=config['lr']))
         
         network_params = network_def.init(init_rng, **network_args)['params']
         network = TrainState.create(network_def, network_params, tx=network_tx)

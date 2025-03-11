@@ -972,7 +972,7 @@ class DynamicsTransformer(nn.Module):
             h = self.block_module(h)
         
         h = h.reshape(B, T, 3, self.h_dim).transpose(0, 2, 1, 3)
-        context_embedding = self.context_final_emb(h[:, 2]) # predict based on context and s, a
+        context_embedding = self.context_final_emb(h[:, 1]) # context is s_0, a_0, lt_0 ... and predict based on context and s_t, a_t
         if predict_type:
             return self.classification_head(context_embedding)
         return context_embedding[:, -1]

@@ -23,7 +23,7 @@ agent:
   n_blocks: 4
   n_heads: 5
   h_dim: *z_dim
-  context_len: 1024
+  context_len: 512
   number_of_meta_envs: 10
 
   # F Network
