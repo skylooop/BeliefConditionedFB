@@ -310,14 +310,17 @@ class FValue(nn.Module):
         self.forward_preprocessor_sz = mlp_module(hidden_dims=self.f_preprocessor_hidden_dims, layer_norm=self.f_layer_norm,
                                                   activate_final=self.activate_final)
     
-    def __call__(self, observations, actions, latent_z):
+    def __call__(self, observations, actions, latent_z, context_z=None):
         if self.preprocess:
             processed_sa = self.forward_preprocessor_sa(jnp.concatenate([observations, actions], -1))
             processed_sz = self.forward_preprocessor_sz(jnp.concatenate([observations, latent_z], -1))
         else:
             processed_sa = jnp.concatenate([observations, actions], -1)
             processed_sz = jnp.concatenate([observations, latent_z], -1)
-        f1, f2 = self.forward_map(jnp.concatenate([processed_sa, processed_sz], -1))
+        input = [processed_sa, processed_sz]
+        if context_z is not None:
+            input.append(context_z)
+        f1, f2 = self.forward_map(jnp.concatenate(input, -1))
         
         return f1, f2
 
@@ -332,9 +335,12 @@ class FValueDiscrete(nn.Module):
         self.forward_map = forward_mlp_module((*self.f_hidden_dims, self.latent_z_dim * self.action_dim), activate_final=False,
                                       layer_norm=self.f_layer_norm)
         
-    def __call__(self, observations, latent_z, latent_context=None):
-        processed_sz = jnp.concatenate([observations, latent_z], -1)
-        f1, f2 = self.forward_map(processed_sz)        
+    def __call__(self, observations, latent_z, context_z=None):
+        # processed_sz = jnp.concatenate([observations, latent_z], -1)
+        input = [observations, latent_z]
+        if context_z is not None:
+            input.append(context_z)
+        f1, f2 = self.forward_map(jnp.concatenate(input, -1))        
         return f1.reshape(-1, self.latent_z_dim, self.action_dim), f2.reshape(-1, self.latent_z_dim, self.action_dim)
 
 class BValue(nn.Module):
@@ -347,8 +353,11 @@ class BValue(nn.Module):
                                 kernel_init=orthogonal_scaling())
         self.project_onto = LengthNormalize()
         
-    def __call__(self, goal, latent_context=None):
-        backward = self.backward_map(goal)
+    def __call__(self, goal, context_z=None):
+        input = [goal]
+        if context_z is not None:
+            input.append(context_z)
+        backward = self.backward_map(jnp.concatenate(input, -1))
         project = self.project_onto(backward)
         return project
     
@@ -928,7 +937,8 @@ class DynamicsTransformer(nn.Module):
     drop_p: float
     dtype: Any = jnp.float32
     kernel_init: Callable[..., Any] = lecun_normal()
-
+    num_layouts: int = 5
+    
     def setup(self):
         self.input_seq_len = 3 * self.context_len # state x action; maybe later add z
         self.project_obs = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
@@ -939,23 +949,29 @@ class DynamicsTransformer(nn.Module):
                 max_T=self.input_seq_len,
                 n_heads=self.n_heads,
                 drop_p=self.drop_p)
+        self.classification_head = nn.Dense(features=self.num_layouts)
         
     def __call__(self, states: Float[Array, "bs context_len dim"],
                  actions: Float[Array, "bs context_len dim"],
-                 latent_z: Float[Array, "bs 1 z_dim"] = None):
+                #  latent_z: Float[Array, "bs 1 z_dim"] = None,
+                # layout_type,
+                 predict_type: bool = True):
         B, T, _ = states.shape
-        latent_z = jnp.repeat(latent_z, repeats=T, axis=1)
+        # latent_z = jnp.repeat(latent_z, repeats=T, axis=1)
         states = self.project_obs(states)
         acts = self.project_acts(actions)
+        
         h = jnp.stack(
-            (states, acts, latent_z), axis=1
-        ).transpose(0, 2, 1, 3).reshape(B, 3 * T, self.h_dim)
+            (states, acts), axis=1
+        ).transpose(0, 2, 1, 3).reshape(B, 2 * T, self.h_dim)
         h = self.pre_layernorm(h)
         
         for _ in range(self.n_blocks):
             h = self.block_module(h)
         
-        h = h.reshape(B, T, 3, self.h_dim).transpose(0, 2, 1, 3)
-        context_embedding = self.context_final_emb(h[:, 2])
-        return context_embedding
+        h = h.reshape(B, T, 2, self.h_dim).transpose(0, 2, 1, 3)
+        context_embedding = self.context_final_emb(h[:, 2]) # predict based on context and s, a
+        if predict_type:
+            return self.classification_head(context_embedding)
+        return context_embedding[:, -1]
         

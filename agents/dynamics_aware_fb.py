@@ -11,14 +11,14 @@ from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
 from utils.networks import FBActor, FValue, BValue, FValueDiscrete, \
     DynamicsTransformer
 
-class ForwardBackwardAgent(flax.struct.PyTreeNode):
+class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
     rng: Any
     network: Any
     config: Any = nonpytree_field()
 
     def fb_loss(self, batch, batch_context, z_latent, grad_params, rng):
         rng, sample_rng = jax.random.split(rng)
-
+        dynamics_embedding = self.network.select('dynamics_encoder')(batch_context['observations'], batch_context['actions'], predict_type=False)
         if not self.config['discrete']:
             # Target M
             next_dist = self.network.select('actor')(batch['next_observations'], z_latent)
@@ -35,7 +35,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             M1 = F1 @ B.T
             M2 = F2 @ B.T
         else:
-            target_F1, target_F2 = self.network.select('target_f_value')(batch['next_observations'], z_latent)
+            target_F1, target_F2 = self.network.select('target_f_value')(batch['next_observations'], z_latent, context_z=dynamics_embedding)
             next_Q1 = jnp.einsum('sda, sd -> sa', target_F1, z_latent)
             next_Q2 = jnp.einsum('sda, sd -> sa', target_F2, z_latent)
             next_Q = jnp.minimum(next_Q1, next_Q2)
@@ -52,16 +52,16 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
                 target_F2 = jnp.take_along_axis(target_F2, next_idx, axis=-1).squeeze()
                 next_Q = next_Q.max(-1)
                 
-            target_B = self.network.select('target_b_value')(batch['next_observations'])
+            target_B = self.network.select('target_b_value')(batch['next_observations'], context_z=dynamics_embedding)
             target_M1 = target_F1 @ target_B.T
             target_M2 = target_F2 @ target_B.T
             target_M = jnp.minimum(target_M1, target_M2)
             
             cur_idx = batch['actions'].repeat(repeats=z_latent.shape[-1], axis=1).astype(jnp.int16)[:, :, None]
-            F1, F2 = self.network.select('f_value')(batch['observations'], z_latent, params=grad_params)
+            F1, F2 = self.network.select('f_value')(batch['observations'], z_latent, params=grad_params, context_z=dynamics_embedding)
             F1 = jnp.take_along_axis(F1, cur_idx, axis=-1).squeeze()
             F2 = jnp.take_along_axis(F2, cur_idx, axis=-1).squeeze()
-            B = self.network.select('b_value')(batch['next_observations'], params=grad_params)
+            B = self.network.select('b_value')(batch['next_observations'], params=grad_params, context_z=dynamics_embedding)
             M1 = F1 @ B.T
             M2 = F2 @ B.T
         
@@ -115,24 +115,37 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             'mean_action': actions.mean()
         }
 
+    def pfn_transformer_loss(self, batch_context, latent_z, grad_params, rng):
+        context_type = self.network.select('dynamics_encoder')(batch_context['observations'], batch_context['actions'],
+                                                               params=grad_params, predict_type=True)
+        labels = jax.nn.one_hot(batch_context['layout_type'].reshape(-1), 5)
+        pfn_loss = optax.losses.softmax_cross_entropy(context_type.reshape(-1, 5), labels).mean()
+        return pfn_loss, {
+            "pfn_loss": pfn_loss
+        }
+    
     @jax.jit
     def total_loss(self, batch, batch_context, latent_z, grad_params, rng=None):
         """Compute the total loss."""
         info = {}
         rng = rng if rng is not None else self.rng
-        rng, actor_rng, fb_recon_rng = jax.random.split(rng, 3)
+        rng, actor_rng, fb_recon_rng, pfn_rng = jax.random.split(rng, 4)
 
         fb_loss, fb_info = self.fb_loss(batch, batch_context, latent_z, grad_params, fb_recon_rng)
         for k, v in fb_info.items():
             info[f'fb/{k}'] = v
 
+        pfn_transformer_loss, pfn_info = self.pfn_transformer_loss(batch_context, latent_z, grad_params, pfn_rng)
+        for k, v in pfn_info.items():
+            info[f'pfn/{k}'] = v
+            
         actor_loss = 0.0
         if not self.config['discrete']:
             actor_loss, actor_info = self.actor_loss(batch, latent_z, grad_params, actor_rng)
             for k, v in actor_info.items():
                 info[f'actor/{k}'] = v
 
-        loss = fb_loss + actor_loss
+        loss = fb_loss + actor_loss + pfn_transformer_loss
         return loss, info
 
     def target_update(self, network, module_name):
@@ -148,8 +161,8 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
     def update(self, batch, batch_context):
         """Update the agent and return a new agent with information dictionary."""
         new_rng, rng = jax.random.split(self.rng)
-        z = self.sample_mixed_z(batch, self.config['z_dim'], new_rng)
-        
+        z = self.sample_mixed_z(batch, batch_context, self.config['z_dim'], new_rng) # sampling encoding for policies
+
         def loss_fn(grad_params):
             return self.total_loss(batch, batch_context, z, grad_params, rng=rng)
 
@@ -166,20 +179,21 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         z = jax.random.normal(shape=(batch_size, latent_dim), key=key)
         return self.project_z(z)
     
-    def sample_mixed_z(self, batch, latent_dim, key):
+    def sample_mixed_z(self, batch, batch_context, latent_dim, key):
         batch_size = batch['observations'].shape[0]
         z = self.sample_z(batch_size, latent_dim, key)
-        b_goals = self.network.select('b_value')(goal=batch['actor_goals'])
+        context_emb = self.network.select('dynamics_encoder')(batch_context['observations'], batch_context['actions'], predict_type=False)
+        b_goals = self.network.select('b_value')(goal=batch['actor_goals'], context_z=context_emb)
         mask = jax.random.uniform(key, shape=(batch_size, 1)) < self.config['z_mix_ratio']
         z = jnp.where(mask, z, b_goals)
         return z
     
     @jax.jit
-    def infer_z(self, obs, rewards=None):
+    def infer_z(self, obs, context_emb, rewards=None):
         """
         If rewards are None -> treat as goal-conditioned
-        """    
-        z = self.network.select('b_value')(goal=obs)
+        """
+        z = self.network.select('b_value')(goal=obs, context_z=context_emb)
         # if rewards is not None:
         #     z = (rewards.T @ z)
         #z = self.project_z(z)
@@ -190,6 +204,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         self,
         observations,
         latent_z,
+        context_embed,
         seed=None,
         temperature=1.0,
     ):
@@ -200,13 +215,13 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             actions = jnp.clip(actions, -1, 1)
         else:
             latent_z = jnp.atleast_2d(latent_z)
-            Q = self.predict_q(observations, latent_z)
+            Q = self.predict_q(observations, latent_z, context_embed)
             actions = jnp.argmax(Q, axis=-1)
             
         return actions
 
     def predict_q(
-        self, observation, z, action=None
+        self, observation, z, context_embed, action=None
     ):
         if not self.config['discrete']:
             F1, F2 = self.network.select('f_value')(observation, action, z)
@@ -214,7 +229,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             Q2 = (F2 * z).sum(-1)
         else:
             observation = jnp.atleast_2d(observation)
-            F1, F2 = self.network.select('f_value')(observation, z)
+            F1, F2 = self.network.select('f_value')(observation, z, context_embed)
             Q1 = jnp.einsum('sda, sd -> sa', F1, z)
             Q2 = jnp.einsum('sda, sd -> sa', F2, z)
         Q = jnp.minimum(Q1, Q2)
@@ -268,7 +283,13 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             b_layer_norm=config['b_layer_norm'],
             b_hidden_dims=config['b_hidden_dims'],
         )
-        dynamics_def = None
+        dynamics_def = DynamicsTransformer(
+                    n_blocks=config['n_blocks'],
+                    n_heads=config['n_heads'],
+                    context_len=config['context_len'],
+                    h_dim=config['h_dim'],
+                    drop_p=0.1
+                )
         
         actor_def = None
         if not config['discrete']:
@@ -288,12 +309,12 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         
         network_info = dict(
             f_value=(forward_def, (ex_observations, ex_actions, latent_z)) if not config['discrete'] \
-                else (forward_def, (ex_observations, latent_z)),
+                else (forward_def, (ex_observations, latent_z, latent_z)),
             target_f_value=(copy.deepcopy(forward_def), (ex_observations, ex_actions, latent_z)) if not config['discrete'] \
-                else (copy.deepcopy(forward_def), (ex_observations, latent_z)),
-            b_value=(backward_def, (ex_goals, )),
-            target_b_value = (copy.deepcopy(backward_def), (ex_goals, )),
-            dynamics_encoder = (dynamics_def, (ex_observations, ex_actions, latent_z))
+                else (copy.deepcopy(forward_def), (ex_observations, latent_z, latent_z)),
+            b_value=(backward_def, (ex_goals, latent_z)),
+            target_b_value = (copy.deepcopy(backward_def), (ex_goals, latent_z)),
+            dynamics_encoder = (dynamics_def, (ex_observations[None], ex_actions[None]))
         )
         if actor_def is not None:
             network_info.update({"actor": (actor_def, (ex_observations, latent_z))})

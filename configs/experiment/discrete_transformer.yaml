@@ -6,9 +6,9 @@ defaults:
 
 train_steps: 1_000_000
 # For debug
-# log_interval: 5_000
-# eval_interval: 10_000
-tags: [fb, discrete]
+log_interval: 5_000
+eval_interval: 10_000
+tags: [dynamical_fb, discrete]
 
 agent:
   lr: 3e-4

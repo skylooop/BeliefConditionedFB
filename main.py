@@ -62,7 +62,8 @@ def main(cfg: DictConfig):
         
     random.seed(config['seed'])
     np.random.seed(config['seed'])
-    
+    env.seed(config['seed'])
+    eval_env.seed(config['seed'])
     example_batch = train_dataset.sample(1)
     if config['env']['discrete']:
         example_batch['actions'] = np.full_like(example_batch['actions'], fill_value=env.action_space.n - 1)
@@ -92,7 +93,7 @@ def main(cfg: DictConfig):
             batch = train_dataset.sample(config['agent']['batch_size'])
             agent, update_info = agent.update(batch)
         else:
-            batch, batch_context = train_dataset.sample(config['agent']['batch_size'])
+            batch, batch_context = train_dataset.sample(config['agent']['batch_size'], layout_type=step % 5) # currently hardcoded to number of layouts
             agent, update_info = agent.update(batch, batch_context)
             
         # Log metrics.

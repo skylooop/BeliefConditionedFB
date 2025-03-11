@@ -113,9 +113,9 @@ class TrainState(flax.struct.PyTreeNode):
 
         return self.apply_fn(variables, *args, method=method_name, **kwargs)
 
-    def select(self, name):
+    def select(self, name, **kwargs):
         """Helper function to select a module from a `ModuleDict`."""
-        return functools.partial(self, name=name)
+        return functools.partial(self, name=name, **kwargs)
 
     def apply_gradients(self, grads, **kwargs):
         """Apply the gradients and return the updated state."""
