@@ -19,7 +19,8 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
     def fb_loss(self, batch, batch_context, z_latent, grad_params, rng):
         rng, sample_rng = jax.random.split(rng)
         dynamics_embedding = self.network.select('dynamics_encoder')(batch_context['observations'], batch_context['actions'],
-                                                                     batch_context['layout_type'], predict_type=False)
+                                                                        batch_context['layout_type'], predict_type=False)
+
         if not self.config['discrete']:
             # Target M
             next_dist = self.network.select('actor')(batch['next_observations'], z_latent)
@@ -43,7 +44,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
             
             if self.config['boltzmann']:
                 pi = jax.nn.softmax(next_Q / 200, axis=-1)
-                target_F1 = jnp.einsum("sa, sda -> sd", pi, target_F1) # batch x z_dim
+                target_F1 = jnp.einsum("sa, sda -> sd", pi, target_F1)
                 target_F2 = jnp.einsum("sa, sda -> sd", pi, target_F2)
                 next_Q = jnp.einsum("sa, sa -> s", pi, next_Q)
             else:
@@ -52,7 +53,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
                 target_F1 = jnp.take_along_axis(target_F1, next_idx, axis=-1).squeeze()
                 target_F2 = jnp.take_along_axis(target_F2, next_idx, axis=-1).squeeze()
                 next_Q = next_Q.max(-1)
-                
+        
             target_B = self.network.select('target_b_value')(batch['next_observations'], context_z=dynamics_embedding)
             target_M1 = target_F1 @ target_B.T
             target_M2 = target_F2 @ target_B.T
@@ -84,6 +85,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
         
         return total_loss, {
             "fb_loss": total_loss,
+            "pfn_embedding": dynamics_embedding.mean(),
             "z_norm": jnp.linalg.norm(z_latent, axis=-1).mean(),
             "correct_b_ort": correct_ort.sum(),
             # ORTHONORMALITY METRICS
@@ -116,11 +118,13 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
             'mean_action': actions.mean()
         }
 
-    def pfn_transformer_loss(self, batch_context, latent_z, grad_params, rng):
+    def pfn_transformer_loss(self, batch_context, latent_z, grad_params):
         context_type = self.network.select('dynamics_encoder')(batch_context['observations'], batch_context['actions'], batch_context['layout_type'],
                                                                params=grad_params, predict_type=True)
-        labels = jax.nn.one_hot(batch_context['layout_type'].reshape(-1), self.config['number_of_meta_envs'])
-        pfn_loss = optax.losses.softmax_cross_entropy(context_type.reshape(-1, self.config['number_of_meta_envs']), labels).mean()
+        # labels = jax.nn.one_hot(batch_context['layout_type'].reshape(-1), self.config['number_of_meta_envs'])
+        # pfn_loss = optax.losses.softmax_cross_entropy(context_type.reshape(-1, self.config['number_of_meta_envs']), labels).mean()
+        pfn_loss = optax.losses.softmax_cross_entropy_with_integer_labels(context_type,
+                                                                          batch_context['layout_type'][:, -1].reshape(-1)).mean()
         return pfn_loss, {
             "pfn_loss": pfn_loss
         }
@@ -136,7 +140,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
         for k, v in fb_info.items():
             info[f'fb/{k}'] = v
 
-        pfn_transformer_loss, pfn_info = self.pfn_transformer_loss(batch_context, latent_z, grad_params, pfn_rng)
+        pfn_transformer_loss, pfn_info = self.pfn_transformer_loss(batch_context, latent_z, grad_params)
         for k, v in pfn_info.items():
             info[f'pfn/{k}'] = v
             
@@ -291,6 +295,9 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
                     num_layouts=config['number_of_meta_envs'],
                     context_len=config['context_len'],
                     h_dim=config['h_dim'],
+                    use_masked_attention=config['use_masked_attention'],
+                    use_mean_embedding=config['use_mean_embedding'],
+                    use_cls_token=config['use_cls_token'],
                     drop_p=0.1
                 )
         
@@ -328,7 +335,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
         network_def = ModuleDict(networks)
         # lr_schedule = add cosine scheduler
         network_tx = optax.chain(optax.clip_by_global_norm(1.0) if config['clip_by_global_norm'] else optax.identity(),
-                                 optax.adamw(learning_rate=config['lr'], b1=0.9, b2=0.99, weight_decay=0.01))#=config['lr']))
+                                 optax.adamw(learning_rate=config['lr'], b1=0.9, b2=0.99, weight_decay=0.01))
         
         network_params = network_def.init(init_rng, **network_args)['params']
         network = TrainState.create(network_def, network_params, tx=network_tx)

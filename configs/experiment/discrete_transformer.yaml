@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - override /env: gridworld/gridworld
+  - override /env: gridworld/maze-fourrooms-11
   - override /agent: dynamics_aware_fb
 
 train_steps: 1_000_000
@@ -23,8 +23,11 @@ agent:
   n_blocks: 4
   n_heads: 5
   h_dim: *z_dim
-  context_len: 512
+  context_len: 256
   number_of_meta_envs: 10
+  use_masked_attention: False
+  use_mean_embedding: False
+  use_cls_token: False
 
   # F Network
   f_hidden_dims: [512, 512, 512]  # Value network hidden dimensions.

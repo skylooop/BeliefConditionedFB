@@ -872,7 +872,8 @@ class MaskedCausalAttention(nn.Module):
     kernel_init: Callable[..., Any] = lecun_normal()
     bias_init: Callable[..., Any] = zeros
     deterministic: bool = False if drop_p > 0.0 else True
-
+    use_mask: bool = False
+    
     def setup(self):
         self.mask = jnp.tril(
             jnp.ones((self.max_T, self.max_T))).reshape(1, 1, self.max_T, self.max_T)
@@ -886,7 +887,8 @@ class MaskedCausalAttention(nn.Module):
         k = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)(input).reshape(B, T, N, D).transpose(0, 2, 1, 3)
         v = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)(input).reshape(B, T, N, D).transpose(0, 2, 1, 3)
         weights = q @ k.transpose(0, 1, 3, 2) / jnp.sqrt(D)
-        weights = jnp.where(self.mask[..., :T, :T], weights, -jnp.inf)
+        if self.use_mask:
+            weights = jnp.where(self.mask[..., :T, :T], weights, -jnp.inf)
         # normalize weights, all -inf -> 0 after softmax
         normalized_weights = jax.nn.softmax(weights, axis=-1)
         
@@ -908,13 +910,15 @@ class Block(nn.Module):
     kernel_init: Callable[..., Any] = lecun_normal()
     bias_init: Callable[..., Any] = zeros
     deterministic: bool = False if drop_p > 0.0 else True
+    use_mask: bool = False
     
     @nn.compact
     def __call__(self, input: Float[Array, "bs {2}*context_len h_dim"]):
         input = input + MaskedCausalAttention(h_dim=self.h_dim,
             max_T=self.max_T,
             n_heads=self.n_heads,
-            drop_p=self.drop_p)(input)
+            drop_p=self.drop_p,
+            use_mask=self.use_mask)(input)
         input = nn.LayerNorm()(input)
         
         mlp1 = nn.Dense(self.h_dim * 4, kernel_init=self.kernel_init)(input)
@@ -938,9 +942,12 @@ class DynamicsTransformer(nn.Module):
     num_layouts: int
     dtype: Any = jnp.float32
     kernel_init: Callable[..., Any] = lecun_normal()
+    use_masked_attention: bool = False
+    use_mean_embedding: bool = False
+    use_cls_token: bool = False
     
     def setup(self):
-        self.input_seq_len = 3 * self.context_len # state x action; maybe later add z
+        self.input_seq_len = 2 * self.context_len # state x action; maybe later add z
         self.project_obs = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
         self.project_acts = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
         self.project_layout = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
@@ -948,32 +955,52 @@ class DynamicsTransformer(nn.Module):
         self.pre_layernorm = nn.LayerNorm()
         self.context_final_emb = nn.Dense(self.h_dim)
         self.block_module = Block(h_dim=self.h_dim,
-                max_T=self.input_seq_len,
+                max_T=self.input_seq_len + 1 if self.use_cls_token else self.input_seq_len,
                 n_heads=self.n_heads,
-                drop_p=self.drop_p)
-        self.classification_head = nn.Dense(features=self.num_layouts)
+                drop_p=self.drop_p,
+                use_mask=self.use_masked_attention)
+        self.classification_head = MLP([512, 512, 512])#nn.Dense(features=self.num_layouts)
+        # Learnable CLS token initialized with zeros; consider using a small random init
+        self.cls_token = self.param('cls_token', nn.initializers.zeros, (1, 1, self.h_dim))
         
-    def __call__(self, states: Float[Array, "bs context_len dim"],
+    def __call__(self,
+                 states: Float[Array, "bs context_len dim"],
                  actions: Float[Array, "bs context_len dim"],
                 #  latent_z: Float[Array, "bs 1 z_dim"] = None,
-                layout_type,
-                 predict_type: bool = True):
+                layout_type=None,
+                 predict_type: bool = True,
+                 return_last_layer: bool = False): # TODO: make next obs
         B, T, _ = states.shape
         # latent_z = jnp.repeat(latent_z, repeats=T, axis=1)
         states = self.project_obs(states)
         acts = self.project_acts(actions)
-        layout_type = self.project_layout(layout_type)
+        # layout_type = self.project_layout(layout_type)
         h = jnp.stack(
-            (states, acts, layout_type), axis=1
-        ).transpose(0, 2, 1, 3).reshape(B, 3 * T, self.h_dim)
+            (states, acts), axis=1
+        ).transpose(0, 2, 1, 3).reshape(B, 2 * T, self.h_dim)
+        if self.use_cls_token:
+            cls_tokens = jnp.repeat(self.cls_token, B, axis=0)  # Shape (B, 1, h_dim)
+            h = jnp.concatenate([cls_tokens, h], axis=1)  # New shape (B, 2*T + 1, h_dim)
         h = self.pre_layernorm(h)
         
         for _ in range(self.n_blocks):
             h = self.block_module(h)
         
-        h = h.reshape(B, T, 3, self.h_dim).transpose(0, 2, 1, 3)
-        context_embedding = self.context_final_emb(h[:, 1]) # context is s_0, a_0, lt_0 ... and predict based on context and s_t, a_t
+        # if self.use_cls_token: FIX (T+1) / 2 
+        #     h = h.reshape(B, T + 1, 2, self.h_dim).transpose(0, 2, 1, 3)
+        # else:
+        h = h.reshape(B, T, 2, self.h_dim).transpose(0, 2, 1, 3)
+            
+        if self.use_mean_embedding:
+            context_embedding = jnp.mean(h[:, 1], axis=1)
+        elif self.use_cls_token:
+            context_embedding = h[:, 0]
+        else:
+            context_embedding = h[:, 1, -1]
+        # context_embedding = self.context_final_emb(h[:, 1]) # context is s_0, a_0, ... and predict based on context and s_t, a_t
         if predict_type:
             return self.classification_head(context_embedding)
-        return context_embedding[:, -1]
+        if return_last_layer:
+            return h[:, 1]
+        return context_embedding
         
