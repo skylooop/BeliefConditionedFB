@@ -20,14 +20,15 @@ agent:
   boltzmann: True
 
   # Transformer
-  n_blocks: 4
-  n_heads: 5
+  warmup_steps: 5000
+  n_blocks: 2
+  n_heads: 2
   h_dim: *z_dim
-  context_len: 256
-  number_of_meta_envs: 10
+  context_len: 512
+  number_of_meta_envs: 20
   use_masked_attention: False
-  use_mean_embedding: False
-  use_cls_token: False
+  use_mean_embedding: True
+  cosine_schedule: False
 
   # F Network
   f_hidden_dims: [512, 512, 512]  # Value network hidden dimensions.

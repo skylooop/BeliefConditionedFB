@@ -8,8 +8,10 @@ import numpy as np
 import optax
 
 from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
-from utils.networks import FBActor, FValue, BValue, FValueDiscrete, \
-    DynamicsTransformer
+from utils.networks import FBActor, FValue, BValue, FValueDiscrete
+    # DynamicsTransformer
+from utils.transformer_nets import DynamicsTransformer # for testing
+from functools import partial
 
 class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
     rng: Any
@@ -18,9 +20,12 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
 
     def fb_loss(self, batch, batch_context, z_latent, grad_params, rng):
         rng, sample_rng = jax.random.split(rng)
-        dynamics_embedding = self.network.select('dynamics_encoder')(batch_context['observations'], batch_context['actions'],
-                                                                        batch_context['layout_type'], predict_type=False)
-
+        dynamics_embedding = self.network.select('dynamics_encoder')(batch_context['observations'],
+                                                                     batch_context['actions'],
+                                                                     batch_context['next_observations'],
+                                                                     params=grad_params, train=True, return_embedding=True)
+        dynamics_emb_no_grad = jax.lax.stop_gradient(dynamics_embedding)
+        
         if not self.config['discrete']:
             # Target M
             next_dist = self.network.select('actor')(batch['next_observations'], z_latent)
@@ -37,7 +42,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
             M1 = F1 @ B.T
             M2 = F2 @ B.T
         else:
-            target_F1, target_F2 = self.network.select('target_f_value')(batch['next_observations'], z_latent, context_z=dynamics_embedding)
+            target_F1, target_F2 = self.network.select('target_f_value')(batch['next_observations'], z_latent, context_z=dynamics_emb_no_grad)
             next_Q1 = jnp.einsum('sda, sd -> sa', target_F1, z_latent)
             next_Q2 = jnp.einsum('sda, sd -> sa', target_F2, z_latent)
             next_Q = jnp.minimum(next_Q1, next_Q2)
@@ -49,12 +54,12 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
                 next_Q = jnp.einsum("sa, sa -> s", pi, next_Q)
             else:
                 next_action = next_Q.argmax(-1, keepdims=True)
-                next_idx = next_action[:, None, :].repeat(repeats=z_latent.shape[-1], axis=1).astype(jnp.int16)
+                next_idx = next_action[:, None, :].repeat(repeats=z_latent.shape[-1], axis=1).astype(jnp.int32)
                 target_F1 = jnp.take_along_axis(target_F1, next_idx, axis=-1).squeeze()
                 target_F2 = jnp.take_along_axis(target_F2, next_idx, axis=-1).squeeze()
                 next_Q = next_Q.max(-1)
         
-            target_B = self.network.select('target_b_value')(batch['next_observations'], context_z=dynamics_embedding)
+            target_B = self.network.select('target_b_value')(batch['next_observations'], context_z=dynamics_emb_no_grad)
             target_M1 = target_F1 @ target_B.T
             target_M2 = target_F2 @ target_B.T
             target_M = jnp.minimum(target_M1, target_M2)
@@ -119,8 +124,10 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
         }
 
     def pfn_transformer_loss(self, batch_context, latent_z, grad_params):
-        context_type = self.network.select('dynamics_encoder')(batch_context['observations'], batch_context['actions'], batch_context['layout_type'],
-                                                               params=grad_params, predict_type=True)
+        context_type = self.network.select('dynamics_encoder')(batch_context['observations'], batch_context['actions'],
+                                                               batch_context['next_observations'],
+                                                               batch_context['layout_type'],
+                                                               params=grad_params)
         # labels = jax.nn.one_hot(batch_context['layout_type'].reshape(-1), self.config['number_of_meta_envs'])
         # pfn_loss = optax.losses.softmax_cross_entropy(context_type.reshape(-1, self.config['number_of_meta_envs']), labels).mean()
         pfn_loss = optax.losses.softmax_cross_entropy_with_integer_labels(context_type,
@@ -129,20 +136,22 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
             "pfn_loss": pfn_loss
         }
     
-    @jax.jit
-    def total_loss(self, batch, batch_context, latent_z, grad_params, rng=None):
+    def total_loss(self, batch, batch_context, latent_z, grad_params,
+                   train_dynamic_encoder, train_fb, rng=None):
         """Compute the total loss."""
         info = {}
         rng = rng if rng is not None else self.rng
         rng, actor_rng, fb_recon_rng, pfn_rng = jax.random.split(rng, 4)
 
-        fb_loss, fb_info = self.fb_loss(batch, batch_context, latent_z, grad_params, fb_recon_rng)
-        for k, v in fb_info.items():
-            info[f'fb/{k}'] = v
-
-        pfn_transformer_loss, pfn_info = self.pfn_transformer_loss(batch_context, latent_z, grad_params)
-        for k, v in pfn_info.items():
-            info[f'pfn/{k}'] = v
+        if train_fb:
+            fb_loss, fb_info = self.fb_loss(batch, batch_context, latent_z, grad_params, fb_recon_rng)
+            for k, v in fb_info.items():
+                info[f'fb/{k}'] = v
+                
+        if train_dynamic_encoder:
+            pfn_transformer_loss, pfn_info = self.pfn_transformer_loss(batch_context, latent_z, grad_params)
+            for k, v in pfn_info.items():
+                info[f'pfn/{k}'] = v
             
         actor_loss = 0.0
         if not self.config['discrete']:
@@ -150,7 +159,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
             for k, v in actor_info.items():
                 info[f'actor/{k}'] = v
 
-        loss = fb_loss + actor_loss + pfn_transformer_loss
+        loss = fb_loss + actor_loss #+ pfn_transformer_loss
         return loss, info
 
     def target_update(self, network, module_name):
@@ -162,14 +171,15 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
         )
         network.params[f'modules_target_{module_name}'] = new_target_params
 
-    @jax.jit
-    def update(self, batch, batch_context):
+    @partial(jax.jit, static_argnames=('train_dynamic_encoder', 'train_fb'))
+    def update(self, batch, batch_context, train_dynamic_encoder=True, train_fb=True):
         """Update the agent and return a new agent with information dictionary."""
         new_rng, rng = jax.random.split(self.rng)
         z = self.sample_mixed_z(batch, batch_context, self.config['z_dim'], new_rng) # sampling encoding for policies
 
         def loss_fn(grad_params):
-            return self.total_loss(batch, batch_context, z, grad_params, rng=rng)
+            return self.total_loss(batch, batch_context, z, grad_params,
+                                   rng=rng, train_dynamic_encoder=train_dynamic_encoder, train_fb=train_fb)
 
         new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn)        
         self.target_update(new_network, 'f_value')
@@ -187,8 +197,12 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
     def sample_mixed_z(self, batch, batch_context, latent_dim, key):
         batch_size = batch['observations'].shape[0]
         z = self.sample_z(batch_size, latent_dim, key)
-        context_emb = self.network.select('dynamics_encoder')(batch_context['observations'], batch_context['actions'], batch_context['layout_type'],
-                                                              predict_type=False)
+        context_emb = self.network.select('dynamics_encoder')(batch_context['observations'],
+                                                              batch_context['actions'],
+                                                              batch_context['next_observations'],
+                                                              train=False,
+                                                              return_embedding=True
+                                                              )
         b_goals = self.network.select('b_value')(goal=batch['actor_goals'], context_z=context_emb)
         mask = jax.random.uniform(key, shape=(batch_size, 1)) < self.config['z_mix_ratio']
         z = jnp.where(mask, z, b_goals)
@@ -289,17 +303,27 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
             b_layer_norm=config['b_layer_norm'],
             b_hidden_dims=config['b_hidden_dims'],
         )
+        # dynamics_def = DynamicsTransformer(
+        #             n_blocks=config['n_blocks'],
+        #             n_heads=config['n_heads'],
+        #             num_layouts=config['number_of_meta_envs'],
+        #             context_len=config['context_len'],
+        #             h_dim=config['h_dim'],
+        #             use_masked_attention=config['use_masked_attention'],
+        #             use_mean_embedding=config['use_mean_embedding'],
+        #             use_cls_token=config['use_cls_token'],
+        #             drop_p=0.1
+        #         )
         dynamics_def = DynamicsTransformer(
-                    n_blocks=config['n_blocks'],
-                    n_heads=config['n_heads'],
-                    num_layouts=config['number_of_meta_envs'],
-                    context_len=config['context_len'],
-                    h_dim=config['h_dim'],
-                    use_masked_attention=config['use_masked_attention'],
-                    use_mean_embedding=config['use_mean_embedding'],
-                    use_cls_token=config['use_cls_token'],
-                    drop_p=0.1
-                )
+            num_layers=config['n_blocks'],
+            num_heads=config['n_heads'],
+            causal=False,
+            emb_dim=config['h_dim'],
+            mlp_dim=config['h_dim'],
+            dropout_rate=0.0,
+            attention_dropout_rate=0.0,
+            action_dim=action_dim
+        )
         
         actor_def = None
         if not config['discrete']:
@@ -324,7 +348,8 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
                 else (copy.deepcopy(forward_def), (ex_observations, latent_z, latent_z)),
             b_value=(backward_def, (ex_goals, latent_z)),
             target_b_value = (copy.deepcopy(backward_def), (ex_goals, latent_z)),
-            dynamics_encoder = (dynamics_def, (ex_observations[None], ex_actions[None], jnp.zeros((1, 1, 1))))
+            dynamics_encoder = (dynamics_def, (ex_observations[None], ex_actions[None], ex_observations[None], True, False))
+            #dynamics_encoder = (dynamics_def, (ex_observations[None], ex_actions[None], ex_observations[None], jnp.zeros((1, 1, 1))))
         )
         if actor_def is not None:
             network_info.update({"actor": (actor_def, (ex_observations, latent_z))})
@@ -333,9 +358,15 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
         network_args = {k: v[1] for k, v in network_info.items()}
 
         network_def = ModuleDict(networks)
-        # lr_schedule = add cosine scheduler
-        network_tx = optax.chain(optax.clip_by_global_norm(1.0) if config['clip_by_global_norm'] else optax.identity(),
-                                 optax.adamw(learning_rate=config['lr'], b1=0.9, b2=0.99, weight_decay=0.01))
+        
+        if config['cosine_schedule']:
+            schedule_fn = optax.cosine_decay_schedule(-config['lr'], 1_000_000)
+            tx = optax.chain(optax.scale_by_adam(),
+                                    optax.scale_by_schedule(schedule_fn))
+        else:
+            tx = optax.adam(learning_rate=config['lr']) #, b1=0.9, b2=0.99, weight_decay=0.01))
+        
+        network_tx = optax.chain(optax.clip_by_global_norm(1.0) if config['clip_by_global_norm'] else optax.identity(), tx)
         
         network_params = network_def.init(init_rng, **network_args)['params']
         network = TrainState.create(network_def, network_params, tx=network_tx)

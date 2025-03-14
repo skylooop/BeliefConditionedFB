@@ -336,7 +336,6 @@ class FValueDiscrete(nn.Module):
                                       layer_norm=self.f_layer_norm)
         
     def __call__(self, observations, latent_z, context_z=None):
-        # processed_sz = jnp.concatenate([observations, latent_z], -1)
         input = [observations, latent_z]
         if context_z is not None:
             input.append(context_z)
@@ -944,57 +943,52 @@ class DynamicsTransformer(nn.Module):
     kernel_init: Callable[..., Any] = lecun_normal()
     use_masked_attention: bool = False
     use_mean_embedding: bool = False
-    use_cls_token: bool = False
     
     def setup(self):
-        self.input_seq_len = 2 * self.context_len # state x action; maybe later add z
+        self.input_seq_len = 3 * self.context_len # state x action; maybe later add z
         self.project_obs = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
         self.project_acts = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
         self.project_layout = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
-        
+        self.project_next_states = nn.Dense(features=self.h_dim, kernel_init=self.kernel_init)
         self.pre_layernorm = nn.LayerNorm()
         self.context_final_emb = nn.Dense(self.h_dim)
         self.block_module = Block(h_dim=self.h_dim,
-                max_T=self.input_seq_len + 1 if self.use_cls_token else self.input_seq_len,
+                max_T=self.input_seq_len,
                 n_heads=self.n_heads,
                 drop_p=self.drop_p,
                 use_mask=self.use_masked_attention)
-        self.classification_head = MLP([512, 512, 512])#nn.Dense(features=self.num_layouts)
+        self.classification_head = MLP([512, 512, self.num_layouts])#nn.Dense(self.num_layouts)
+        
         # Learnable CLS token initialized with zeros; consider using a small random init
         self.cls_token = self.param('cls_token', nn.initializers.zeros, (1, 1, self.h_dim))
         
     def __call__(self,
                  states: Float[Array, "bs context_len dim"],
                  actions: Float[Array, "bs context_len dim"],
-                #  latent_z: Float[Array, "bs 1 z_dim"] = None,
-                layout_type=None,
+                 next_states: Float[Array, "bs context_len dim"],
+                 layout_type=None,
                  predict_type: bool = True,
-                 return_last_layer: bool = False): # TODO: make next obs
+                 return_last_layer: bool = False):
+        
+        assert states.ndim == 3
+        assert states.shape[-1] == self.h_dim
+        
         B, T, _ = states.shape
-        # latent_z = jnp.repeat(latent_z, repeats=T, axis=1)
         states = self.project_obs(states)
         acts = self.project_acts(actions)
-        # layout_type = self.project_layout(layout_type)
+        next_states = self.project_next_states(next_states)
         h = jnp.stack(
-            (states, acts), axis=1
-        ).transpose(0, 2, 1, 3).reshape(B, 2 * T, self.h_dim)
-        if self.use_cls_token:
-            cls_tokens = jnp.repeat(self.cls_token, B, axis=0)  # Shape (B, 1, h_dim)
-            h = jnp.concatenate([cls_tokens, h], axis=1)  # New shape (B, 2*T + 1, h_dim)
-        h = self.pre_layernorm(h)
+            (states, acts, next_states), axis=1
+        ).transpose(0, 2, 1, 3).reshape(B, 3 * T, self.h_dim)
         
+        h = self.pre_layernorm(h)
         for _ in range(self.n_blocks):
             h = self.block_module(h)
-        
-        # if self.use_cls_token: FIX (T+1) / 2 
-        #     h = h.reshape(B, T + 1, 2, self.h_dim).transpose(0, 2, 1, 3)
-        # else:
-        h = h.reshape(B, T, 2, self.h_dim).transpose(0, 2, 1, 3)
+    
+        h = h.reshape(B, T, 3, self.h_dim).transpose(0, 2, 1, 3)
             
         if self.use_mean_embedding:
             context_embedding = jnp.mean(h[:, 1], axis=1)
-        elif self.use_cls_token:
-            context_embedding = h[:, 0]
         else:
             context_embedding = h[:, 1, -1]
         # context_embedding = self.context_final_emb(h[:, 1]) # context is s_0, a_0, ... and predict based on context and s_t, a_t

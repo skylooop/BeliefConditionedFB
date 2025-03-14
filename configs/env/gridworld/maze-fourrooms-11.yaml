@@ -1,2 +1,3 @@
 env_name: maze-fourrooms-11
 discrete: True
+action_dim: 4
