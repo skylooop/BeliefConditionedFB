@@ -267,7 +267,12 @@ class GCDataset:
             idxs = filtered_dataset.get_random_idxs(context_length * batch_size)
             context_batch = filtered_dataset.sample(context_length * batch_size, idxs)
             context_batch = jax.tree.map(lambda x: x.reshape(batch_size, context_length, -1), context_batch)
-            return batch, context_batch
+            
+            idxs2 = filtered_dataset.get_random_idxs(context_length * batch_size)
+            context_batch2 = filtered_dataset.sample(context_length * batch_size, idxs2)
+            context_batch2 = jax.tree.map(lambda x: x.reshape(batch_size, context_length, -1), context_batch2)
+            
+            return batch, context_batch, context_batch2
         return batch
 
     def sample_goals(self, idxs, p_curgoal, p_trajgoal, p_randomgoal, geom_sample):

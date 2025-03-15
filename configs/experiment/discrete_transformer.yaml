@@ -20,12 +20,12 @@ agent:
   boltzmann: True
 
   # Transformer
-  warmup_steps: 5000
+  warmup_steps: 100
   n_blocks: 2
   n_heads: 2
   h_dim: *z_dim
   context_len: 512
-  number_of_meta_envs: 20
+  number_of_meta_envs: 5
   use_masked_attention: False
   use_mean_embedding: True
   cosine_schedule: False

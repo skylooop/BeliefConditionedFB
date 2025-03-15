@@ -149,18 +149,35 @@ class Encoder1DBlock(nn.Module):
 
         return x + y
 
+class LayoutClassifier(nn.Module):
+    hidden_dims: Sequence[int]
+    num_layouts: int 
+    
+    def setup(self):
+        self.classifier = MLP((*self.hidden_dims, self.num_layouts))
+        
+    def __call__(self, context_embedding, states):
+        z_expand = jnp.expand_dims(context_embedding, axis=1) # [batch, 1, emb_dim]
+        z_expand = jnp.repeat(z_expand, repeats=states.shape[1], axis=1)
+        decoder_input = jnp.concatenate([z_expand, states], axis=-1)
+        layout_pred = self.classifier(decoder_input)
+        return layout_pred
+    
 class DynamicsTransformer(nn.Module):
     num_layers: int
     emb_dim: int
     mlp_dim: int
     num_heads: int
     dropout_rate: float
+    num_layouts: int
     action_dim: int # discritizing actions
     attention_dropout_rate: float
     causal: bool = False
-
+    
     @nn.compact
-    def __call__(self, states, actions, next_states, train:bool=False, return_embedding=False):
+    def __call__(self, states, actions, next_states, layout_type=None,
+                 train:bool=False, return_embedding=False):
+        
         assert states.ndim == 3  # (batch, len, emb)
         assert next_states.ndim == 3
         assert actions.ndim == 3
@@ -169,18 +186,14 @@ class DynamicsTransformer(nn.Module):
         B, T, _ = states.shape
         states = nn.Dense(self.emb_dim // 2)(states)
         actions = nn.Dense(self.emb_dim // 2)(actions)
+        
         next_states = nn.Dense(self.emb_dim)(next_states)
+        # layout_type = nn.Embed(self.num_layouts, self.emb_dim // 2)(layout_type)
+        
         state_act_pair = jnp.concatenate([states, actions], axis=-1)
+        # next_state_layout = jnp.concatenate([next_states, layout_type], axis=-1)
         x = jnp.stack((state_act_pair, next_states), axis=2).reshape(B, 2 * T, self.emb_dim)
-        # states = MLP(hidden_dims=[256, 256, self.emb_dim], layer_norm=False)(obs)
-        # acts = MLP(hidden_dims=[256, 256, self.emb_dim], layer_norm=False)(actions)
-        # next_states = MLP(hidden_dims=[256, 256, self.emb_dim], layer_norm=False)(next_obs)
-        
-        # x = jnp.stack(
-        #     (states, acts, next_states), axis=1
-        # ).transpose(0, 2, 1, 3).reshape(B, 3 * T, self.emb_dim)
-        
-        # Input Encoder. Each layer processes x, but the shape of x does not change.
+
         for lyr in range(self.num_layers):
             x = Encoder1DBlock(
                     mlp_dim=self.mlp_dim,
