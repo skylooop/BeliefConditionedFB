@@ -2,12 +2,11 @@ defaults:
   - _self_
   - agent: fb
   - env: ogbench/ogbench-pointmaze-medium-stitch-v0 #ogbench/ogbench-pointmaze-medium-stitch-v0 #gridworld/maze-fourrooms-11
-  
   # for smooth transitions between experiments
   - experiment: null
 
 # MISC
-seed: 1337
+seed: 42
 run_group: ${agent.agent_name}
 save_dir: experiment_logs/
 

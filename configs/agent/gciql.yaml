@@ -1,14 +1,6 @@
-# Used for not only generalizing across different dynamics, but also across different tasks
-agent_name: dynamics_aware_iql
-
-lr: 3e-4
-batch_size: 1024
+# Used for generalizing GCIQL to novel dynamics
+agent_name: gciql
 discrete: ${env.discrete}
-
-# MISC
-discount: 0.99  # Discount factor. 0.99 - for maze, 0.98 others
-tau: 0.01  # Target network update rate.
-clip_by_global_norm: True
 
 # Dataset hyperparameters.
 dataset_class: GCDataset  # Dataset class name.

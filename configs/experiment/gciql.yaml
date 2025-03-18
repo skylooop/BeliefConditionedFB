@@ -2,13 +2,14 @@
 
 defaults:
   - override /env: gridworld/maze-fourrooms-11
-  - override /agent: dynamics_aware_iql
+  - override /agent: gciql
 
 train_steps: 1_000_000
+
 # For debug
 log_interval: 5_000
 eval_interval: 10_000
-tags: [dynamical_iql, discrete]
+tags: [gciql, discrete]
 
 agent:
   lr: 3e-4
@@ -24,18 +25,8 @@ agent:
   discrete: True
 
   # Transformer
-  use_context: True # False
-  warmup_steps: 50000
-  n_blocks: 2
-  n_heads: 5
-  h_dim: 150
-  context_len: 512
-  number_of_meta_envs: 20
-  use_masked_attention: False
-  use_mean_embedding: True
-  cosine_schedule: False
+  use_context: False
 
-  # in discrete case actor is deterministic
   # MISC
   discount: 0.99
   tau: 0.01  # Target network update rate.

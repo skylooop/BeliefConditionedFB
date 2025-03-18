@@ -148,7 +148,21 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5):
         train_dataset = np.load("aux_data/gridworld_data.npy", allow_pickle=True)[()]
         train_dataset = Dataset.create(**train_dataset)
         val_dataset = train_dataset
+    
+    if 'doors' in dataset_name:
+        from envs.minigrid.doors_grid import DynamicsGeneralization_Doors, MinigridWrapper
         
+        env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=200)
+        eval_env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=200)
+        env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
+        eval_env = EpisodeMonitor(eval_env, filter_regexes=['.*privileged.*', '.*proprio.*'])
+        
+        # env._gen_grid = partial(env._gen_grid, layout_type=i)
+        env = MinigridWrapper(env)
+        train_dataset = np.load("/home/m_bobrin/ZeroShotRL/aux_data/iql_door_data.npy", allow_pickle=True).item()
+        train_dataset = Dataset.create(**train_dataset)
+        val_dataset = train_dataset
+    
     if frame_stack is not None:
         env = FrameStackWrapper(env, frame_stack)
         eval_env = FrameStackWrapper(eval_env, frame_stack)

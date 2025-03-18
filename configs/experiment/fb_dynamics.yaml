@@ -24,7 +24,7 @@ agent:
   n_blocks: 2
   n_heads: 5
   h_dim: *z_dim
-  context_len: 512
+  context_len: 128
   number_of_meta_envs: 20
   use_masked_attention: False
   use_mean_embedding: True

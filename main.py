@@ -44,7 +44,6 @@ def main(cfg: DictConfig):
     exp_name = get_exp_name(cfg.seed)
 
     config = OmegaConf.to_container(cfg, resolve=True)
-    # config = FLAGS.agent 
     pprint(config)
     run = setup_wandb(project='ZeroShotRL', group=config['run_group'], name=exp_name,
                       mode="offline" if FLAGS.disable_jit else "online", config=config, tags=config['tags'])
