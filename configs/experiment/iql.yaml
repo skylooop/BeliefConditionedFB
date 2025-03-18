@@ -2,43 +2,41 @@
 
 defaults:
   - override /env: gridworld/maze-fourrooms-11
-  - override /agent: dynamics_aware_fb
+  - override /agent: dynamics_aware_iql
 
 train_steps: 1_000_000
 # For debug
 log_interval: 5_000
 eval_interval: 10_000
-tags: [dynamical_fb, discrete]
+tags: [dynamical_iql, discrete]
 
 agent:
   lr: 3e-4
-  batch_size: 512
+  batch_size: 1024
 
-  # FB Specific
-  z_dim: &z_dim 150
-  z_mix_ratio: 0.5
-  boltzmann: True
+  # IQL
+  const_std: True
+  actor_hidden_dims: [512, 512, 512]
+  value_hidden_dims: [512, 512, 512]
+  layer_norm: True
+  actor_loss: awr
+  alpha: 0.003
+  discrete: True
 
   # Transformer
+  use_context: True # False
   warmup_steps: 50000
   n_blocks: 2
   n_heads: 5
-  h_dim: *z_dim
+  h_dim: 150
   context_len: 512
   number_of_meta_envs: 20
   use_masked_attention: False
   use_mean_embedding: True
   cosine_schedule: False
 
-  # F Network
-  f_hidden_dims: [512, 512, 512]  # Value network hidden dimensions.
-  f_layer_norm: True  # Whether to use layer normalization.
-  # B Network
-  b_hidden_dims: [512, 512, 512]  # Value network hidden dimensions.
-  b_layer_norm: True  # Whether to use layer normalization.
-
   # in discrete case actor is deterministic
   # MISC
   discount: 0.99
   tau: 0.01  # Target network update rate.
-  
+  expectile: 0.9

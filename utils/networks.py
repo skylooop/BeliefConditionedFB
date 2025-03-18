@@ -78,13 +78,13 @@ class MLP(nn.Module):
         for i, size in enumerate(self.hidden_dims):
             x = nn.Dense(size, kernel_init=self.kernel_init)(x)
             if i + 1 < len(self.hidden_dims) or self.activate_final:
-                if i == 0:
-                    x = nn.tanh(x)
+                # if i == 0:
+                #     x = nn.tanh(x)
+                #     x = nn.LayerNorm()(x)
+                # else:
+                x = self.activations(x)
+                if self.layer_norm:
                     x = nn.LayerNorm()(x)
-                else:
-                    x = self.activations(x)
-                    if self.layer_norm:
-                        x = nn.LayerNorm()(x)
         return x
 
 class LengthNormalize(nn.Module):
@@ -266,6 +266,7 @@ class GCDiscreteActor(nn.Module):
         self,
         observations,
         goals=None,
+        dynamics_embedding=None,
         goal_encoded=False,
         temperature=1.0,
     ):
@@ -283,6 +284,8 @@ class GCDiscreteActor(nn.Module):
             inputs = [observations]
             if goals is not None:
                 inputs.append(goals)
+            if dynamics_embedding is not None:
+                inputs.append(dynamics_embedding)
             inputs = jnp.concatenate(inputs, axis=-1)
         outputs = self.actor_net(inputs)
 
@@ -480,7 +483,7 @@ class GCValue(nn.Module):
 
         self.value_net = value_net
 
-    def __call__(self, observations, goals=None, actions=None):
+    def __call__(self, observations, goals=None, actions=None, dynamics_embedding=None):
         """Return the value/critic function.
 
         Args:
@@ -496,6 +499,8 @@ class GCValue(nn.Module):
                 inputs.append(goals)
         if actions is not None:
             inputs.append(actions)
+        if dynamics_embedding is not None:
+            inputs.append(dynamics_embedding)
         inputs = jnp.concatenate(inputs, axis=-1)
 
         v = self.value_net(inputs).squeeze(-1)
@@ -508,9 +513,9 @@ class GCDiscreteCritic(GCValue):
 
     action_dim: int = None
 
-    def __call__(self, observations, goals=None, actions=None):
+    def __call__(self, observations, goals=None, actions=None, dynamics_embedding=None):
         actions = jnp.eye(self.action_dim)[actions]
-        return super().__call__(observations, goals, actions)
+        return super().__call__(observations, goals, actions, dynamics_embedding)
 
 
 class GCBilinearValue(nn.Module):
@@ -959,15 +964,12 @@ class DynamicsTransformer(nn.Module):
                 use_mask=self.use_masked_attention)
         self.classification_head = MLP([512, 512, self.num_layouts])#nn.Dense(self.num_layouts)
         
-        # Learnable CLS token initialized with zeros; consider using a small random init
-        self.cls_token = self.param('cls_token', nn.initializers.zeros, (1, 1, self.h_dim))
-        
     def __call__(self,
                  states: Float[Array, "bs context_len dim"],
                  actions: Float[Array, "bs context_len dim"],
                  next_states: Float[Array, "bs context_len dim"],
                  layout_type=None,
-                 predict_type: bool = True,
+                 predict_type: bool = False,
                  return_last_layer: bool = False):
         
         assert states.ndim == 3

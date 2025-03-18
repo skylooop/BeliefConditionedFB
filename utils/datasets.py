@@ -262,7 +262,7 @@ class GCDataset:
             if np.random.rand() < self.config['p_aug']:
                 self.augment(batch, ['observations', 'next_observations', 'value_goals', 'actor_goals'])
         
-        #for dynamics-aware FB context 
+        # for dynamics-aware
         if layout_type is not None:
             idxs = filtered_dataset.get_random_idxs(context_length * batch_size)
             context_batch = filtered_dataset.sample(context_length * batch_size, idxs)
@@ -331,6 +331,24 @@ class GCDataset:
             rets.append(jax.tree_util.tree_map(lambda arr: arr[cur_idxs], self.dataset['observations']))
         return jax.tree_util.tree_map(lambda *args: np.concatenate(args, axis=-1), *rets)
 
+    def sample_traj_random(self, batch_size, num_traj_states, num_random_states, num_random_states_decode):
+        indx = np.random.randint(self.dataset.size-1, size=batch_size)
+        batch = self.dataset.sample(batch_size, indx)
+        indx_expand = np.repeat(indx, num_traj_states-1) # (batch_size * num_traj_states)
+        traj_indx = self.sample_goals(indx_expand, p_trajgoal=1.0, p_curgoal=0.0, geom_sample=True, p_randomgoal=0.0)
+        traj_indx = traj_indx.reshape(batch_size, num_traj_states-1) # (batch_size, num_traj_states)
+        batch['traj_states'] = jax.tree_map(lambda arr: arr[traj_indx], self.dataset['observations'])
+        batch['traj_states'] = np.concatenate([batch['observations'][:,None,:], batch['traj_states']], axis=1)
+
+        rand_indx = np.random.randint(self.dataset.size-1, size=batch_size * num_random_states)
+        rand_indx = rand_indx.reshape(batch_size, num_random_states)
+        batch['random_states'] = jax.tree_map(lambda arr: arr[rand_indx], self.dataset['observations'])
+
+        rand_indx_decode = np.random.randint(self.dataset.size-1, size=batch_size * num_random_states_decode)
+        rand_indx_decode = rand_indx_decode.reshape(batch_size, num_random_states_decode)
+        batch['random_states_decode'] = jax.tree_map(lambda arr: arr[rand_indx_decode], self.dataset['observations'])
+        return batch
+    
 
 @dataclasses.dataclass
 class HGCDataset(GCDataset):

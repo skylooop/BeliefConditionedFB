@@ -20,7 +20,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
 
     def fb_loss(self, batch, batch_context, z_latent, grad_params, rng):
         rng, sample_rng = jax.random.split(rng)
-        dynamics_embedding = self.network.select('dynamics_encoder')(batch_context['observations'],
+        dynamics_embedding, _ = self.network.select('dynamics_encoder')(batch_context['observations'],
                                                                      batch_context['actions'],
                                                                      batch_context['next_observations'],
                                                                      train=False, return_embedding=True)
@@ -132,7 +132,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
         layout_pred_loss = jax.vmap(optax.losses.softmax_cross_entropy_with_integer_labels)(layout_pred,
                                                                           batch_context2['layout_type'].squeeze()).mean()
         kl_loss = -0.5 * (1 + w_log_std - w_mean**2 - jnp.exp(w_log_std)).mean()
-        reward_kl_loss = layout_pred_loss + kl_loss # add weight
+        reward_kl_loss = layout_pred_loss + 0.01 * kl_loss # add weight
         return reward_kl_loss, {
             "reward_kl_loss": reward_kl_loss
         }
@@ -200,7 +200,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
     def sample_mixed_z(self, batch, batch_context, latent_dim, key):
         batch_size = batch['observations'].shape[0]
         z = self.sample_z(batch_size, latent_dim, key)
-        context_emb = self.network.select('dynamics_encoder')(batch_context['observations'],
+        context_emb, _ = self.network.select('dynamics_encoder')(batch_context['observations'],
                                                               batch_context['actions'],
                                                               batch_context['next_observations'],
                                                               train=False,
@@ -329,7 +329,7 @@ class DynamicsForwardBackwardAgent(flax.struct.PyTreeNode):
             num_layouts=config['number_of_meta_envs']
         )
         
-        actor_def = None
+        actor_def = None # Since FB using argmax_a
         if not config['discrete']:
             actor_def = FBActor(
                 hidden_dims=config['actor_hidden_dims'],

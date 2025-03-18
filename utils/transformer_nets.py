@@ -177,8 +177,8 @@ class DynamicsTransformer(nn.Module):
     @nn.compact
     def __call__(self, states, actions, next_states, layout_type=None,
                  train:bool=False, return_embedding=False):
-        
-        assert states.ndim == 3  # (batch, len, emb)
+
+        assert states.ndim == 3  # (batch, len, dim)
         assert next_states.ndim == 3
         assert actions.ndim == 3
         
@@ -205,8 +205,9 @@ class DynamicsTransformer(nn.Module):
                             x, deterministic=not train, train=train)
         encoded = nn.LayerNorm(name='encoder_norm')(x)
         context_embedding = encoded.mean(axis=1)
+
         if return_embedding:
-            return context_embedding
+            return context_embedding, encoded
         
         emb_mean = nn.Dense(self.emb_dim)(context_embedding)
         emb_log_std = nn.Dense(self.emb_dim)(context_embedding)

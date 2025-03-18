@@ -32,7 +32,7 @@ class Maze(BaseMaze):
         return free, obstacle, agent, goal
 
 class FourRoomsMazeEnv(BaseEnv):
-    def __init__(self, maze, max_width=100, obs_type="xy"):
+    def __init__(self, maze, max_width=100, obs_type="xy", max_steps: int = 100):
         super().__init__(max_width)
         
         self.maze = maze
@@ -45,7 +45,8 @@ class FourRoomsMazeEnv(BaseEnv):
         self.goal = None
         self.start = None
         self.maze_state = self.maze.maze_grid
-    
+        self.max_steps = max_steps
+        
     def map_state_to_idx(self, states):
         return np.sum(states * np.array((self.maze_state.shape[0], 1)), axis=-1)
     
@@ -69,6 +70,7 @@ class FourRoomsMazeEnv(BaseEnv):
         self.step_count = 0
         self.cur_pos = start_idx
         self.maze_state = self.maze.to_value()
+
         return np.array(start_idx), {"goal_pos": np.array(goal_idx)}
 
     def get_state_list(self):
@@ -134,7 +136,7 @@ class FourRoomsMazeEnv(BaseEnv):
             
         self.maze_state = self.maze.to_value()
         self.cur_pos = new_position
-        if self.step_count >= 200:
+        if self.step_count >= self.max_steps:
             done = True
         return np.array(new_position), reward, done, False, {}
         
