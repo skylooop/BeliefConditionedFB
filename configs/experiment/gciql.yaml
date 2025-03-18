@@ -1,14 +1,14 @@
 # @package _global_
 
 defaults:
-  - override /env: gridworld/maze-fourrooms-11
+  - override /env: gridworld/doors
   - override /agent: gciql
 
-train_steps: 1_000_000
+train_steps: 100_000
 
 # For debug
-log_interval: 5_000
-eval_interval: 10_000
+log_interval: 10_000
+eval_interval: 20_000
 tags: [gciql, discrete]
 
 agent:

@@ -53,26 +53,43 @@ class DynamicsGeneralization_Doors(MiniGridEnv):
 
         self.grid.wall_rect(0, 0, width, height)
 
-        # Generate vertical separation wall
+        door_1 = np.random.randint(low=1, high=height - 1)
+        door_2 = np.random.randint(low=1, high=height - 1)
+
         for i in range(0, height):
-            self.grid.set(4, i, Wall())
+            self.grid.set(5, i, Wall())
+            self.grid.set(3, i, Wall())
         
-        # # Place the door and key
         if layout_type == 1:
-            self.grid.set(4, 2, Door(COLOR_NAMES[0], is_locked=False, is_open=True))
-            self.put_obj(Goal(), width - 2, 4)
-            self.goal_pos = np.array((width-2, 4))
-        # self.grid.set(4, 4, Door(COLOR_NAMES[1], is_locked=False, is_open=True))
+            door_3 = 2
+            door_5 = 6
         elif layout_type == 0:
-            self.grid.set(4, 6, Door(COLOR_NAMES[3], is_locked=False, is_open=True))
-            self.put_obj(Goal(), width - 2, 4)
-            self.goal_pos = np.array((width-2, 4))
+            door_3 = 6
+            door_5 = 2
         else:
-            self.grid.set(4, 2, Door(COLOR_NAMES[0], is_locked=False, is_open=True))
-            self.grid.set(4, 6, Door(COLOR_NAMES[3], is_locked=False, is_open=True))
-            self.put_obj(Goal(), width - 2, 4)
-            self.goal_pos = np.array((width-2, 4))
-        
+            # If layout_type is provided, use it as a seed; else, random
+            if layout_type is not None:
+                rng = np.random.RandomState(layout_type)
+                door_3 = rng.randint(1, height - 1)
+                door_5 = rng.randint(1, height - 1)
+            else:
+                door_3 = np.random.randint(1, height - 1)
+                door_5 = np.random.randint(1, height - 1)
+                
+        # # Place the door and key
+        # if layout_type == 1:
+        #     self.grid.set(4, 2, Door(COLOR_NAMES[0], is_locked=False, is_open=True))
+
+        # elif layout_type == 0:
+        #     self.grid.set(4, 6, Door(COLOR_NAMES[3], is_locked=False, is_open=True))
+        # else:
+        #     self.grid.set(4, 2, Door(COLOR_NAMES[0], is_locked=False, is_open=True))
+        #     self.grid.set(4, 6, Door(COLOR_NAMES[3], is_locked=False, is_open=True))
+        self.grid.set(3, door_3, Door(COLOR_NAMES[0], is_locked=False, is_open=True))
+        self.grid.set(5, door_5, Door(COLOR_NAMES[3], is_locked=False, is_open=True))
+    
+        self.put_obj(Goal(), width - 2, 4)
+        self.goal_pos = np.array((width-2, 4))
         # Place the agent
         if self.agent_start_pos is not None:
             self.agent_pos = self.agent_start_pos

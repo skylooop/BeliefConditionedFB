@@ -32,9 +32,10 @@ from utils.evaluation import evaluate, evaluate_fourrooms, flatten, supply_rng
 from utils.log_utils import CsvLogger, get_exp_name, get_wandb_video, setup_wandb
 from envs.ogbench.ant_utils import policy_image, value_image
 from envs.custom_mazes.env_utils import value_image_fourrooms, policy_image_fourrooms
+from envs.minigrid.env_utils import value_image_doors, policy_image_doors, doors_value_fn
 
 FLAGS = flags.FLAGS
-flags.DEFINE_bool('disable_jit', True, 'Whether to disable JIT compilation.')
+flags.DEFINE_bool('disable_jit', False, 'Whether to disable JIT compilation.')
 
 @hydra.main(version_base='1.2', config_name="entry", config_path=str(ROOT) + "/configs")
 def main(cfg: DictConfig):
@@ -58,14 +59,16 @@ def main(cfg: DictConfig):
     train_dataset = dataset_class(Dataset.create(**train_dataset), config['agent'])
     if val_dataset is not None:
         val_dataset = dataset_class(Dataset.create(**val_dataset), config['agent'])
-        
+    
     random.seed(config['seed'])
     np.random.seed(config['seed'])
-    env.seed(config['seed'])
-    eval_env.seed(config['seed'])
+    # env.seed(config['seed'])
+    # eval_env.seed(config['seed'])
+    
     example_batch = train_dataset.sample(1)
     if config['env']['discrete']:
-        example_batch['actions'] = np.full_like(example_batch['actions'], fill_value=env.action_space.n - 1)
+        fill_value = getattr(env, "action_space", env.env)
+        example_batch['actions'] = np.full_like(example_batch['actions'], fill_value=fill_value.action_space.n - 1)
     
     agent_class = agents[config['agent']['agent_name']]
     agent = agent_class.create(
@@ -88,7 +91,7 @@ def main(cfg: DictConfig):
     pbar = tqdm(range(1, config['train_steps'] + 1), colour='green', dynamic_ncols=True, position=0, leave=True)
     for step in pbar:
         key = jax.random.fold_in(key, step)
-        if config['agent']['agent_name'] != "dynamics_aware_fb":
+        if config['agent']['agent_name'] in ['gciql', 'fb']:
             batch = train_dataset.sample(config['agent']['batch_size'])
             agent, update_info = agent.update(batch)
         else:
@@ -98,11 +101,11 @@ def main(cfg: DictConfig):
         # Log metrics.
         if step % config['log_interval'] == 0 or step == 1:
             train_metrics = {f'training/{k}': v for k, v in update_info.items()}
-            if val_dataset is not None:
-                val_batch = val_dataset.sample(config['agent']['batch_size'])
-                latent_z = agent.sample_mixed_z(batch, config['agent']['z_dim'], key)
-                _, val_info = agent.total_loss(val_batch, latent_z, grad_params=None)
-                train_metrics.update({f'validation/{k}': v for k, v in val_info.items()})
+            # if val_dataset is not None:
+            #     val_batch = val_dataset.sample(config['agent']['batch_size'])
+            #     latent_z = agent.sample_mixed_z(batch, config['agent']['z_dim'], key)
+            #     _, val_info = agent.total_loss(val_batch, latent_z, grad_params=None)
+            #     train_metrics.update({f'validation/{k}': v for k, v in val_info.items()})
                 
             train_metrics['time/epoch_time'] = (time.time() - last_time) / config['log_interval']
             train_metrics['time/total_time'] = time.time() - first_time
@@ -214,11 +217,31 @@ def main(cfg: DictConfig):
                 wandb.log(eval_metrics, step=step)
                 eval_logger.log(eval_metrics, step=step)
             
+            if 'doors' in config['env']['env_name']:
+                task_id = 0 
+                if 'gciql' in config['agent']['agent_name']:
+                    env.env.unwrapped._gen_grid = partial(env.env.unwrapped._gen_grid, layout_type=0) # other than 0 - random
+                    dynamics_embedding=None
+                    obs, info = env.reset()
+                    goal = info.get("goal_pos", None)
+                    pred_policy_img = policy_image_doors(env, example_batch,
+                                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
+                                                                                    goals=goal, dynamics_embedding=dynamics_embedding, temperature=0.0),
+                                                                    goal=goal)
+                    pred_value_img = value_image_doors(env, example_batch,
+                            value_fn=partial(doors_value_fn, agent, dynamics_embedding=dynamics_embedding), action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
+                                                                  goals=goal, temperature=0.0, dynamics_embedding=dynamics_embedding), goal=goal)
+                    eval_metrics[f'draw_Q/draw_value_task_{task_id}'] = wandb.Image(pred_value_img)
+                    eval_metrics[f'draw_policy/draw_policy_task_{task_id}'] = wandb.Image(pred_policy_img)
+                    
+                wandb.log(eval_metrics, step=step)
+                eval_logger.log(eval_metrics, step=step)
+            
     train_logger.close()
     eval_logger.close()
     
-    env.close()
-    eval_env.close()
+    # env.close()
+    # eval_env.close()
 
 def entry(argv):
     sys.argv = argv
