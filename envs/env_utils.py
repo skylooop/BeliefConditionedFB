@@ -8,6 +8,7 @@ from gymnasium.spaces import Box
 import ogbench
 from utils.datasets import Dataset, GCDataset
 from envs.ogbench.ant_utils import MazeVizWrapper
+import jax
 
 class EpisodeMonitor(gymnasium.Wrapper):
     """Environment wrapper to monitor episode statistics."""
@@ -154,9 +155,13 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5):
         
         env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=200)
         eval_env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=200)
-        # env._gen_grid = partial(env._gen_grid, layout_type=i)
+
         env = MinigridWrapper(env)
-        train_dataset = np.load(f"/home/m_bobrin/ZeroShotRL/aux_data/iql_door_data_0.npy", allow_pickle=True).item() # layout_type
+        if 'context' in dataset_name:
+            train_dataset = np.load(f"/home/m_bobrin/ZeroShotRL/aux_data/iql_door_data_meta.npy", allow_pickle=True).item() 
+        else:
+            train_dataset = np.load(f"/home/m_bobrin/ZeroShotRL/aux_data/iql_door_data_0.npy", allow_pickle=True).item() # layout_type
+        print(f"Dataset shapes: {jax.tree.map(lambda x: x.shape, train_dataset)}")
         train_dataset = Dataset.create(**train_dataset)
         val_dataset = train_dataset
     

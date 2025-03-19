@@ -1,20 +1,22 @@
 # @package _global_
 
 defaults:
-  - override /env: gridworld/maze-fourrooms-11
+  - override /env: gridworld/doors_context
   - override /agent: gciql
 
 train_steps: 1_000_000
 # For debug
-log_interval: 5_000
-eval_interval: 10_000
+log_interval: 10_000
+eval_interval: 20_000
+
+# Wandb
 tags: [dynamics_gciql, discrete]
 
 agent:
   lr: 3e-4
-  batch_size: 1024
+  batch_size: 16
 
-  # IQL
+  # GCIQL
   const_std: True
   actor_hidden_dims: [512, 512, 512]
   value_hidden_dims: [512, 512, 512]
@@ -24,18 +26,17 @@ agent:
   discrete: True
 
   # Transformer
-  use_context: True # False
+  use_context: True
   warmup_steps: 50000
   n_blocks: 2
   n_heads: 5
   h_dim: 150
-  context_len: 512
-  number_of_meta_envs: 20
+  context_len: 256
+  number_of_meta_envs: 5
   use_masked_attention: False
   use_mean_embedding: True
   cosine_schedule: False
 
-  # in discrete case actor is deterministic
   # MISC
   discount: 0.99
   tau: 0.01  # Target network update rate.

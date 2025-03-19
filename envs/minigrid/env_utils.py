@@ -59,7 +59,7 @@ def random_exploration_inference(env, context_len: int, num_episodes=1, layout_t
         cur_actions = []
         cur_dones = []
         done = False
-        while i < context_len:
+        while i <= context_len:
             i+=1
             cur_observations.append(np.array(env.env.unwrapped.agent_pos, dtype=np.float32))
             action = np.random.choice(available_actions, replace=True)
@@ -67,7 +67,7 @@ def random_exploration_inference(env, context_len: int, num_episodes=1, layout_t
             cur_actions.append(np.array(action, dtype=np.float32))
             done = truncated
             cur_dones.append(np.array(done, dtype=np.float32))
-
+            
         observations.append(np.stack(cur_observations))
         actions.append(np.stack(cur_actions))
         dones.append(np.stack(cur_dones))

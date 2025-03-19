@@ -76,15 +76,6 @@ class DynamicsGeneralization_Doors(MiniGridEnv):
                 door_3 = np.random.randint(1, height - 1)
                 door_5 = np.random.randint(1, height - 1)
                 
-        # # Place the door and key
-        # if layout_type == 1:
-        #     self.grid.set(4, 2, Door(COLOR_NAMES[0], is_locked=False, is_open=True))
-
-        # elif layout_type == 0:
-        #     self.grid.set(4, 6, Door(COLOR_NAMES[3], is_locked=False, is_open=True))
-        # else:
-        #     self.grid.set(4, 2, Door(COLOR_NAMES[0], is_locked=False, is_open=True))
-        #     self.grid.set(4, 6, Door(COLOR_NAMES[3], is_locked=False, is_open=True))
         self.grid.set(3, door_3, Door(COLOR_NAMES[0], is_locked=False, is_open=True))
         self.grid.set(5, door_5, Door(COLOR_NAMES[3], is_locked=False, is_open=True))
     

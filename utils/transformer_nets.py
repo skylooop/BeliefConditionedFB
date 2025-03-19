@@ -117,7 +117,7 @@ class Encoder1DBlock(nn.Module):
     causal: bool
     dropout_rate: float
     attention_dropout_rate: float
-    dtype: Dtype = jnp.float32
+    dtype: Dtype = jnp.bfloat16
 
     @nn.compact
     def __call__(self, inputs, *, deterministic, train=True):

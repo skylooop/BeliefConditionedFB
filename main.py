@@ -32,7 +32,7 @@ from utils.evaluation import evaluate, evaluate_fourrooms, flatten, supply_rng
 from utils.log_utils import CsvLogger, get_exp_name, get_wandb_video, setup_wandb
 from envs.ogbench.ant_utils import policy_image, value_image
 from envs.custom_mazes.env_utils import value_image_fourrooms, policy_image_fourrooms
-from envs.minigrid.env_utils import value_image_doors, policy_image_doors, doors_value_fn
+from envs.minigrid.env_utils import value_image_doors, policy_image_doors, doors_value_fn, random_exploration_inference
 
 FLAGS = flags.FLAGS
 flags.DEFINE_bool('disable_jit', False, 'Whether to disable JIT compilation.')
@@ -91,11 +91,12 @@ def main(cfg: DictConfig):
     pbar = tqdm(range(1, config['train_steps'] + 1), colour='green', dynamic_ncols=True, position=0, leave=True)
     for step in pbar:
         key = jax.random.fold_in(key, step)
-        if config['agent']['agent_name'] in ['gciql', 'fb']:
+        if not config['agent']['use_context']:
             batch = train_dataset.sample(config['agent']['batch_size'])
             agent, update_info = agent.update(batch)
         else:
-            batch, batch_context = train_dataset.sample(config['agent']['batch_size'], layout_type=step % 5) # currently hardcoded to number of layouts
+            batch, batch_context, _ = train_dataset.sample(config['agent']['batch_size'], layout_type=2 + step % config['agent']['number_of_meta_envs'],
+                                                              context_length=config['agent']['context_len'])
             agent, update_info = agent.update(batch, batch_context)
             
         # Log metrics.
@@ -222,8 +223,15 @@ def main(cfg: DictConfig):
                 if 'gciql' in config['agent']['agent_name']:
                     env.env.unwrapped._gen_grid = partial(env.env.unwrapped._gen_grid, layout_type=0) # other than 0 - random
                     dynamics_embedding=None
+                    if config['agent']['use_context']:
+                        dataset_inference, env = random_exploration_inference(env, num_episodes=1, layout_type=0, context_len=config['agent']['context_len'])
+                        dynamics_embedding, _ = agent.network.select('dynamic_transformer')(dataset_inference['observations'][None], dataset_inference['actions'][None, :, None],
+                                                                                                    dataset_inference['next_observations'][None], train=False, return_embedding=True)
+                        dynamics_embedding = dynamics_embedding.squeeze()
+
                     obs, info = env.reset()
                     goal = info.get("goal_pos", None)
+                    
                     pred_policy_img = policy_image_doors(env, example_batch,
                                                                     action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
                                                                                     goals=goal, dynamics_embedding=dynamics_embedding, temperature=0.0),
