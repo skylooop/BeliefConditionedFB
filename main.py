@@ -219,29 +219,32 @@ def main(cfg: DictConfig):
                 eval_logger.log(eval_metrics, step=step)
             
             if 'doors' in config['env']['env_name']:
-                task_id = 0 
                 if 'gciql' in config['agent']['agent_name']:
-                    env.env.unwrapped._gen_grid = partial(env.env.unwrapped._gen_grid, layout_type=0) # other than 0 - random
-                    dynamics_embedding=None
-                    if config['agent']['use_context']:
-                        dataset_inference, env = random_exploration_inference(env, num_episodes=1, layout_type=0, context_len=config['agent']['context_len'])
-                        dynamics_embedding, _ = agent.network.select('dynamic_transformer')(dataset_inference['observations'][None], dataset_inference['actions'][None, :, None],
-                                                                                                    dataset_inference['next_observations'][None], train=False, return_embedding=True)
-                        dynamics_embedding = dynamics_embedding.squeeze()
-
-                    obs, info = env.reset()
-                    goal = info.get("goal_pos", None)
-                    
-                    pred_policy_img = policy_image_doors(env, example_batch,
-                                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
-                                                                                    goals=goal, dynamics_embedding=dynamics_embedding, temperature=0.0),
-                                                                    goal=goal)
-                    pred_value_img = value_image_doors(env, example_batch,
-                            value_fn=partial(doors_value_fn, agent, dynamics_embedding=dynamics_embedding), action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
-                                                                  goals=goal, temperature=0.0, dynamics_embedding=dynamics_embedding), goal=goal)
-                    eval_metrics[f'draw_Q/draw_value_task_{task_id}'] = wandb.Image(pred_value_img)
-                    eval_metrics[f'draw_policy/draw_policy_task_{task_id}'] = wandb.Image(pred_policy_img)
-                    
+                    for layout_type in tqdm(range(2, 5), leave=False, position=1, colour='blue'):
+                        if config['agent']['use_context']:
+                            env.env.unwrapped._gen_grid = partial(env.env.unwrapped._gen_grid, layout_type=layout_type)
+                            dataset_inference, env = random_exploration_inference(env, num_episodes=1, layout_type=layout_type, context_len=config['agent']['context_len'])
+                            dynamics_embedding, _ = agent.network.select('dynamic_transformer')(dataset_inference['observations'][None], dataset_inference['actions'][None, :, None],
+                                                                                                        dataset_inference['next_observations'][None], train=False, return_embedding=True)
+                            dynamics_embedding = dynamics_embedding.squeeze()
+                        else:
+                            env.env.unwrapped._gen_grid = partial(env.env.unwrapped._gen_grid, layout_type=0) # other than 0 or 1 - random
+                            dynamics_embedding=None
+                            
+                        obs, info = env.reset()
+                        goal = info.get("goal_pos", None)
+                        
+                        pred_policy_img = policy_image_doors(env, example_batch,
+                                                                        action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
+                                                                                        goals=goal, dynamics_embedding=dynamics_embedding, temperature=0.0),
+                                                                        goal=goal)
+                        pred_value_img = value_image_doors(env, example_batch,
+                                value_fn=partial(doors_value_fn, agent, dynamics_embedding=dynamics_embedding), action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
+                                                                    goals=goal, temperature=0.0, dynamics_embedding=dynamics_embedding), goal=goal)
+                        eval_metrics[f'draw_Q/draw_value_task_{layout_type}'] = wandb.Image(pred_value_img)
+                        eval_metrics[f'draw_policy/draw_policy_task_{layout_type}'] = wandb.Image(pred_policy_img)
+                        if not config['agent']['use_context']:
+                            break
                 wandb.log(eval_metrics, step=step)
                 eval_logger.log(eval_metrics, step=step)
             

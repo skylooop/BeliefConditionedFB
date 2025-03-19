@@ -53,9 +53,6 @@ class DynamicsGeneralization_Doors(MiniGridEnv):
 
         self.grid.wall_rect(0, 0, width, height)
 
-        door_1 = np.random.randint(low=1, high=height - 1)
-        door_2 = np.random.randint(low=1, high=height - 1)
-
         for i in range(0, height):
             self.grid.set(5, i, Wall())
             self.grid.set(3, i, Wall())
