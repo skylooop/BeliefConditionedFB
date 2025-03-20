@@ -95,7 +95,7 @@ def main(cfg: DictConfig):
             batch = train_dataset.sample(config['agent']['batch_size'])
             agent, update_info = agent.update(batch)
         else:
-            batch, batch_context, _ = train_dataset.sample(config['agent']['batch_size'], layout_type=2 + step % config['agent']['number_of_meta_envs'],
+            batch, batch_context, _ = train_dataset.sample(config['agent']['batch_size'], layout_type=step % config['agent']['number_of_meta_envs'],
                                                               context_length=config['agent']['context_len'])
             agent, update_info = agent.update(batch, batch_context)
             

@@ -14,18 +14,17 @@ def random_exploration(env, num_episodes: int, layout_type: int):
     actions = []
     dones = []
 
-    available_actions = np.array([0, 1, 2, 3])
+    # available_actions = np.array([0, 1, 2, 3])
     for _ in range(num_episodes):
-        i=0
         env.reset()
         cur_observations = []
         cur_actions = []
         cur_dones = []
         done = False
         while not done:
-            i+=1
             cur_observations.append(np.array(env.env.unwrapped.agent_pos, dtype=np.float32))
-            action = np.random.choice(available_actions, replace=True)
+            #action = np.random.choice(available_actions, replace=True)
+            action = env.env.unwrapped.action_space.sample()
             next_state, reward, terminated, truncated, info = env.step(action)
             cur_actions.append(np.array(action, dtype=np.float32))
             done = truncated
