@@ -290,7 +290,7 @@ class GCIQLAgent(flax.struct.PyTreeNode):
                 gc_encoder=encoders.get('actor'),
             )
         if config['use_context']:
-            dynamics_embedding = jnp.zeros((1, config['number_of_meta_envs']))#jnp.zeros((1, config['h_dim']))
+            dynamics_embedding = jnp.zeros((1, config['h_dim'])) # jnp.zeros((1, config['number_of_meta_envs']))#
         network_info = dict(
             value=(value_def, (ex_observations, ex_goals) if not config['use_context'] else (ex_observations, ex_goals, None, dynamics_embedding)),
             critic=(critic_def, (ex_observations, ex_goals, ex_actions) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding)),
