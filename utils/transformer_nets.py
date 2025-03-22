@@ -182,13 +182,11 @@ class DynamicsTransformer(nn.Module):
         assert next_states.ndim == 3
         assert actions.ndim == 3
         
-        # currently working for discrete actions, later fix
         B, T, _ = states.shape
         states = nn.Dense(self.emb_dim // 2)(states)
         actions = nn.Dense(self.emb_dim // 2)(actions)
         
         next_states = nn.Dense(self.emb_dim)(next_states)
-        # layout_type = nn.Embed(self.num_layouts, self.emb_dim // 2)(layout_type)
         
         state_act_pair = jnp.concatenate([states, actions], axis=-1)
         # next_state_layout = jnp.concatenate([next_states, layout_type], axis=-1)

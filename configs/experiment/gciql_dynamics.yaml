@@ -6,8 +6,8 @@ defaults:
 
 train_steps: 1_000_000
 # For debug
-log_interval: 10_000
-eval_interval: 20_000
+log_interval: 5_000
+eval_interval: 5_000
 
 # Wandb
 tags: [dynamics_gciql, discrete]
@@ -32,7 +32,7 @@ agent:
   n_heads: 5
   h_dim: 150
   context_len: 256
-  number_of_meta_envs: 5
+  number_of_meta_envs: 10
   use_masked_attention: False
   use_mean_embedding: True
   cosine_schedule: False

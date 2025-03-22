@@ -18,6 +18,7 @@ from omegaconf import OmegaConf, DictConfig
 
 import jax
 import numpy as np
+import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 import wandb
 from absl import app, flags
@@ -32,10 +33,11 @@ from utils.evaluation import evaluate, evaluate_fourrooms, flatten, supply_rng
 from utils.log_utils import CsvLogger, get_exp_name, get_wandb_video, setup_wandb
 from envs.ogbench.ant_utils import policy_image, value_image
 from envs.custom_mazes.env_utils import value_image_fourrooms, policy_image_fourrooms
-from envs.minigrid.env_utils import value_image_doors, policy_image_doors, doors_value_fn, random_exploration_inference
+from envs.minigrid.env_utils import value_image_doors, policy_image_doors, doors_value_fn,\
+    plot_image_pcas, random_exploration, image_mdps
 
 FLAGS = flags.FLAGS
-flags.DEFINE_bool('disable_jit', False, 'Whether to disable JIT compilation.')
+flags.DEFINE_bool('disable_jit', True, 'Whether to disable JIT compilation.')
 
 @hydra.main(version_base='1.2', config_name="entry", config_path=str(ROOT) + "/configs")
 def main(cfg: DictConfig):
@@ -50,7 +52,8 @@ def main(cfg: DictConfig):
                       mode="offline" if FLAGS.disable_jit else "online", config=config, tags=config['tags'])
     env, eval_env, train_dataset, val_dataset = make_env_and_datasets(dataset_name=config['env']['env_name'],
                                                                       frame_stack=config['agent']['frame_stack'],
-                                                                      action_clip_eps=1e-5 if not config['env']['discrete'] else None)
+                                                                      action_clip_eps=1e-5 if not config['env']['discrete'] else None,
+                                                                      context_len=config['agent']['context_len'] if config['agent']['use_context'] else None)
     dataset_class = {
         'GCDataset': GCDataset,
         #'HGCDataset': HGCDataset,
@@ -62,9 +65,7 @@ def main(cfg: DictConfig):
     
     random.seed(config['seed'])
     np.random.seed(config['seed'])
-    # env.seed(config['seed'])
-    # eval_env.seed(config['seed'])
-    
+
     example_batch = train_dataset.sample(1)
     if config['env']['discrete']:
         fill_value = getattr(env, "action_space", env.env)
@@ -83,11 +84,13 @@ def main(cfg: DictConfig):
     first_time = time.time()
     last_time = time.time()
 
-    #### SHELL HELPER ####
-    # print(Fore.GREEN + "Train step" + Style.RESET_ALL)    
-    # print(Fore.BLUE + "Task" + Style.RESET_ALL)
-    # print(Fore.RED + "Episode" + Style.RESET_ALL)
-    
+    if config['agent']['use_context']:
+        layout_types = range(config['agent']['number_of_meta_envs']) # change to test zero-shot later
+        # For debugging plots
+        layout0_embs = []
+        layout1_embs = []
+        layout2_embs = []
+        
     pbar = tqdm(range(1, config['train_steps'] + 1), colour='green', dynamic_ncols=True, position=0, leave=True)
     for step in pbar:
         key = jax.random.fold_in(key, step)
@@ -97,17 +100,32 @@ def main(cfg: DictConfig):
         else:
             batch, batch_context, _ = train_dataset.sample(config['agent']['batch_size'], layout_type=step % config['agent']['number_of_meta_envs'],
                                                               context_length=config['agent']['context_len'])
-            agent, update_info = agent.update(batch, batch_context)
+            agent, update_info = agent.update(batch, batch_context, train_transformer=True)
             
         # Log metrics.
         if step % config['log_interval'] == 0 or step == 1:
             train_metrics = {f'training/{k}': v for k, v in update_info.items()}
-            # if val_dataset is not None:
-            #     val_batch = val_dataset.sample(config['agent']['batch_size'])
-            #     latent_z = agent.sample_mixed_z(batch, config['agent']['z_dim'], key)
-            #     _, val_info = agent.total_loss(val_batch, latent_z, grad_params=None)
-            #     train_metrics.update({f'validation/{k}': v for k, v in val_info.items()})
+
+            if config['agent']['use_context']:
+                batch, batch_context, _ = train_dataset.sample(1, layout_type=0,
+                                                                    context_length=config['agent']['context_len'])
+                dynamics_embedding, _ = agent.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
+                                                                                        batch_context['next_observations'], train=False, return_embedding=True)
+                layout0_embs.append(jax.device_get(dynamics_embedding))
+            
+                batch, batch_context, _ = train_dataset.sample(1, layout_type=3,
+                                                                    context_length=config['agent']['context_len'])
+                dynamics_embedding, _ = agent.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
+                                                                                        batch_context['next_observations'], train=False, return_embedding=True)
+                layout1_embs.append(jax.device_get(dynamics_embedding))
                 
+                batch, batch_context, _ = train_dataset.sample(1, layout_type=6,
+                                                                    context_length=config['agent']['context_len'])
+                dynamics_embedding, _ = agent.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
+                                                                                        batch_context['next_observations'], train=False, return_embedding=True)
+                layout2_embs.append(jax.device_get(dynamics_embedding))
+                
+    
             train_metrics['time/epoch_time'] = (time.time() - last_time) / config['log_interval']
             train_metrics['time/total_time'] = time.time() - first_time
             last_time = time.time()
@@ -120,6 +138,7 @@ def main(cfg: DictConfig):
             eval_metrics = {}
             overall_metrics = defaultdict(list)
             
+            # A LOT OF LOGGING FUNCTIONS
             if 'ogbench' in config['env']['env_name']:
                 task_infos = env.unwrapped.task_infos if hasattr(env.unwrapped, 'task_infos') else env.task_infos
                 num_tasks = config['eval_tasks'] if config['eval_tasks'] is not None else len(task_infos)
@@ -220,10 +239,10 @@ def main(cfg: DictConfig):
             
             if 'doors' in config['env']['env_name']:
                 if 'gciql' in config['agent']['agent_name']:
-                    for layout_type in tqdm(range(2, 5), leave=False, position=1, colour='blue'):
+                    for layout_type in tqdm(layout_types, leave=False, position=1, colour='blue'):
                         if config['agent']['use_context']:
                             env.env.unwrapped._gen_grid = partial(env.env.unwrapped._gen_grid, layout_type=layout_type)
-                            dataset_inference, env = random_exploration_inference(env, num_episodes=1, layout_type=layout_type, context_len=config['agent']['context_len'])
+                            dataset_inference, env = random_exploration(env, num_episodes=1, layout_type=layout_type)
                             dynamics_embedding, _ = agent.network.select('dynamic_transformer')(dataset_inference['observations'][None], dataset_inference['actions'][None, :, None],
                                                                                                         dataset_inference['next_observations'][None], train=False, return_embedding=True)
                             dynamics_embedding = dynamics_embedding.squeeze()
@@ -243,17 +262,27 @@ def main(cfg: DictConfig):
                                                                     goals=goal, temperature=0.0, dynamics_embedding=dynamics_embedding), goal=goal)
                         eval_metrics[f'draw_Q/draw_value_task_{layout_type}'] = wandb.Image(pred_value_img)
                         eval_metrics[f'draw_policy/draw_policy_task_{layout_type}'] = wandb.Image(pred_policy_img)
-                        if not config['agent']['use_context']:
-                            break
+                    
+                    if config['agent']['use_context']:
+                        embedding_img_mdps = image_mdps(train_dataset, embedding_fn=partial(agent.network.select('dynamic_transformer'),
+                                                                                            train=False, return_embedding=True), context_len=config['agent']['context_len'])
+                        eval_metrics['draw_mdps_emb/PCA_mdps_emb_'] = wandb.Image(embedding_img_mdps)
+                        
+                    if len(layout0_embs) > 30:
+                        evolution_pca_0_img = plot_image_pcas(np.concatenate(layout0_embs))
+                        evolution_pca_1_img = plot_image_pcas(np.concatenate(layout1_embs))
+                        evolution_pca_2_img = plot_image_pcas(np.concatenate(layout2_embs))
+                        
+                        eval_metrics[f'draw_emb/draw_evolution_emb_mdp_0'] = wandb.Image(evolution_pca_0_img)
+                        eval_metrics[f'draw_emb/draw_evolution_emb_mdp_1'] = wandb.Image(evolution_pca_1_img)
+                        eval_metrics[f'draw_emb/draw_evolution_emb_mdp_2'] = wandb.Image(evolution_pca_2_img)
+                    
                 wandb.log(eval_metrics, step=step)
                 eval_logger.log(eval_metrics, step=step)
             
     train_logger.close()
     eval_logger.close()
     
-    # env.close()
-    # eval_env.close()
-
 def entry(argv):
     sys.argv = argv
     disable_jit = FLAGS.disable_jit

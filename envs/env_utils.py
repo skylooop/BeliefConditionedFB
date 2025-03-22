@@ -94,7 +94,7 @@ def normalize_data(input_data):
     normalized_observations[:, 1] = (input_data[:, 1] - y_min) / (y_max - y_min)  # Normalize 
     return normalized_observations
     
-def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5):
+def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5, context_len=None):
     """Make OGBench environment and datasets.
 
     Args:
@@ -153,8 +153,8 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5):
     if 'doors' in dataset_name:
         from envs.minigrid.doors_grid import DynamicsGeneralization_Doors, MinigridWrapper
         
-        env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=256) # SAME AS CONTEXT LEN
-        eval_env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=256)
+        env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=context_len) # SAME AS CONTEXT LEN
+        eval_env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=context_len)
 
         env = MinigridWrapper(env)
         if 'context' in dataset_name:
