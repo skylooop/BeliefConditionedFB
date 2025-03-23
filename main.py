@@ -37,7 +37,7 @@ from envs.minigrid.env_utils import value_image_doors, policy_image_doors, doors
     plot_image_pcas, random_exploration, image_mdps
 
 FLAGS = flags.FLAGS
-flags.DEFINE_bool('disable_jit', True, 'Whether to disable JIT compilation.')
+flags.DEFINE_bool('disable_jit', False, 'Whether to disable JIT compilation.')
 
 @hydra.main(version_base='1.2', config_name="entry", config_path=str(ROOT) + "/configs")
 def main(cfg: DictConfig):
@@ -255,11 +255,11 @@ def main(cfg: DictConfig):
                         
                         pred_policy_img = policy_image_doors(env, example_batch,
                                                                         action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
-                                                                                        goals=goal, dynamics_embedding=dynamics_embedding, temperature=0.0),
+                                                                                        goals=goal, dynamics_embedding=dynamics_embedding, temperature=1.0),
                                                                         goal=goal)
                         pred_value_img = value_image_doors(env, example_batch,
                                 value_fn=partial(doors_value_fn, agent, dynamics_embedding=dynamics_embedding), action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
-                                                                    goals=goal, temperature=0.0, dynamics_embedding=dynamics_embedding), goal=goal)
+                                                                    goals=goal, temperature=1.0, dynamics_embedding=dynamics_embedding), goal=goal)
                         eval_metrics[f'draw_Q/draw_value_task_{layout_type}'] = wandb.Image(pred_value_img)
                         eval_metrics[f'draw_policy/draw_policy_task_{layout_type}'] = wandb.Image(pred_policy_img)
                     

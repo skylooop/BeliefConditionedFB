@@ -162,7 +162,20 @@ class LayoutClassifier(nn.Module):
         decoder_input = jnp.concatenate([z_expand, states], axis=-1)
         layout_pred = self.classifier(decoder_input)
         return layout_pred
+
+class NextStatePrediction(nn.Module):
+    hidden_dims: Sequence[int]
+    out_dim: int
     
+    def setup(self):
+        self.state_predictor = MLP((*self.hidden_dims, self.out_dim))
+        self.state_no_context_pred = MLP((*self.hidden_dims, self.out_dim))
+        
+    def __call__(self, states, actions, context_emb):
+        pred_next_context = self.state_predictor(jnp.concatenate([states, actions], -1))
+        pred_next_no_context = self.state_no_context_pred(jnp.concatenate([states, actions, context_emb], -1))
+        return pred_next_context, pred_next_no_context
+
 class DynamicsTransformer(nn.Module):
     num_layers: int
     emb_dim: int
@@ -179,19 +192,19 @@ class DynamicsTransformer(nn.Module):
                  train:bool=False, return_embedding=False):
 
         assert states.ndim == 3  # (batch, len, dim)
-        assert next_states.ndim == 3
+        #assert next_states.ndim == 3
         assert actions.ndim == 3
         
         B, T, _ = states.shape
         states = nn.Dense(self.emb_dim // 2)(states)
         actions = nn.Dense(self.emb_dim // 2)(actions)
         
-        next_states = nn.Dense(self.emb_dim)(next_states)
+        #next_states = nn.Dense(self.emb_dim)(next_states)
         
         state_act_pair = jnp.concatenate([states, actions], axis=-1)
         # next_state_layout = jnp.concatenate([next_states, layout_type], axis=-1)
-        x = jnp.stack((state_act_pair, next_states), axis=2).reshape(B, 2 * T, self.emb_dim)
-
+        #x = jnp.stack((state_act_pair, next_states), axis=2).reshape(B, 2 * T, self.emb_dim)
+        x = state_act_pair
         for lyr in range(self.num_layers):
             x = Encoder1DBlock(
                     mlp_dim=self.mlp_dim,
@@ -207,7 +220,7 @@ class DynamicsTransformer(nn.Module):
         if return_embedding:
             return context_embedding, encoded
         
-        emb_mean = nn.Dense(self.emb_dim)(context_embedding)
-        emb_log_std = nn.Dense(self.emb_dim)(context_embedding)
+        # emb_mean = nn.Dense(self.emb_dim)(context_embedding)
+        # emb_log_std = nn.Dense(self.emb_dim)(context_embedding)
         
-        return emb_mean, emb_log_std
+        # return emb_mean, emb_log_std

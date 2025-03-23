@@ -105,7 +105,7 @@ def plot_pca(embs, fig, ax):
     plt.tight_layout()
 
 def plot_image_pcas(embs):
-    fig = plt.figure(tight_layout=True, figsize=(20, 13))
+    fig = plt.figure(tight_layout=True, figsize=(20, 10))
     canvas = FigureCanvas(fig)
     plot_pca(embs, fig=fig, ax=plt.gca())
     image = get_canvas_image(canvas)

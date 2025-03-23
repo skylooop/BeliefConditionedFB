@@ -158,25 +158,45 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         else:
             raise ValueError(f'Unsupported actor loss: {self.config["actor_loss"]}')
 
+    def transformer_loss(self, batch, grad_params, batch_context):
+        dynamics_embedding, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
+                                                                                batch_context['next_observations'], train=True, return_embedding=True, params=grad_params)
+        pred_next_context, pred_next_no_context = self.network.select('next_state_pred')(batch['observations'], batch['actions'][:, None], dynamics_embedding, params=grad_params)
+        
+        loss_no_context = optax.squared_error(pred_next_no_context, batch['next_observations']).mean()
+        loss_context = optax.squared_error(pred_next_context, batch['next_observations']).mean()
+        loss = 2 * loss_context + loss_no_context
+        return loss, {"world_pred_loss": loss}
+        
     def total_loss(self, batch, grad_params, train_transformer, batch_context=None, rng=None):
         """Compute the total loss."""
         info = {}
         rng = rng if rng is not None else self.rng
+        value_loss = 0.0
+        critic_loss = 0.0
+        actor_loss = 0.0
+        
+        if not train_transformer:
+            value_loss, value_info = self.value_loss(batch, grad_params, train_transformer=False, batch_context=batch_context)
+            for k, v in value_info.items():
+                info[f'value/{k}'] = v
 
-        value_loss, value_info = self.value_loss(batch, grad_params, train_transformer=train_transformer, batch_context=batch_context)
-        for k, v in value_info.items():
-            info[f'value/{k}'] = v
+            critic_loss, critic_info = self.critic_loss(batch, grad_params, train_transformer=False, batch_context=batch_context)
+            for k, v in critic_info.items():
+                info[f'critic/{k}'] = v
 
-        critic_loss, critic_info = self.critic_loss(batch, grad_params, train_transformer=train_transformer, batch_context=batch_context)
-        for k, v in critic_info.items():
-            info[f'critic/{k}'] = v
+            rng, actor_rng = jax.random.split(rng)
+            actor_loss, actor_info = self.actor_loss(batch, grad_params, train_transformer=False, rng=actor_rng, batch_context=batch_context)
+            for k, v in actor_info.items():
+                info[f'actor/{k}'] = v
 
-        rng, actor_rng = jax.random.split(rng)
-        actor_loss, actor_info = self.actor_loss(batch, grad_params, train_transformer=train_transformer, rng=actor_rng, batch_context=batch_context)
-        for k, v in actor_info.items():
-            info[f'actor/{k}'] = v
-
-        loss = value_loss + critic_loss + actor_loss
+        trans_loss = 0.0
+        if train_transformer:
+            trans_loss, trans_info = self.transformer_loss(batch, grad_params, batch_context=batch_context)
+            for k, v in trans_info.items():
+                info[f'world_model/{k}'] = v
+        
+        loss = value_loss + critic_loss + actor_loss + trans_loss
         return loss, info
 
     def target_update(self, network, module_name):
@@ -300,15 +320,16 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         
         if config['use_context']:
             # Meaning meta-training on different dynamics
-            from utils.transformer_nets import DynamicsTransformer, LayoutClassifier
+            from utils.transformer_nets import DynamicsTransformer, LayoutClassifier, NextStatePrediction
             
             # layout_classifier_def = LayoutClassifier(hidden_dims=(512, 512, 512), num_layouts=config['number_of_meta_envs'])
+            next_state_pred_def = NextStatePrediction(hidden_dims=(256, 256, 256), out_dim=ex_observations.shape[-1])
             dynamics_def = DynamicsTransformer(
                 num_layers=config['n_blocks'],
                 num_heads=config['n_heads'],
                 causal=False, # make permutation-equivariant
                 emb_dim=config['h_dim'],
-                mlp_dim=config['h_dim'],
+                mlp_dim=256,
                 dropout_rate=0.0,
                 attention_dropout_rate=0.0,
                 action_dim=action_dim,
@@ -318,6 +339,10 @@ class GCIQLAgent(flax.struct.PyTreeNode):
                 dynamic_transformer=(dynamics_def, (ex_observations[None], jnp.atleast_3d(ex_actions),
                                                     ex_observations[None], None, True, True))
             )
+            network_info.update(
+                next_state_pred=(next_state_pred_def, (ex_observations, ex_actions[None], jnp.zeros((1, config['h_dim']))))
+            )
+            
         networks = {k: v[0] for k, v in network_info.items()}
         network_args = {k: v[1] for k, v in network_info.items()}
 
