@@ -4,6 +4,7 @@ from typing import Any
 import flax
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
 from utils.networks import GCActor, GCDiscreteActor, GCDiscreteCritic, GCValue
@@ -32,8 +33,6 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         dynamics_embedding=None
         stop_grad_dynamics_embedding=None
         if self.config['use_context']:
-            # dynamics_embedding = jnp.eye(10)[batch_context['layout_type']][:, 0, :].squeeze()
-            # stop_grad_dynamics_embedding = jnp.eye(10)[batch_context['layout_type']][:, 0, :].squeeze()
             if train_transformer:
                 dynamics_embedding, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
                                                                                 batch_context['next_observations'], train=True, return_embedding=True, params=grad_params)
@@ -58,8 +57,6 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         dynamics_embedding=None
         stop_grad_dynamics_embedding=None
         if self.config['use_context']:
-            # dynamics_embedding = jnp.eye(10)[batch_context['layout_type']][:, 0, :].squeeze()
-            # stop_grad_dynamics_embedding = jnp.eye(10)[batch_context['layout_type']][:, 0, :].squeeze()
             if train_transformer:
                 dynamics_embedding, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
                                                                                 batch_context['next_observations'], train=True, return_embedding=True, params=grad_params)
@@ -87,8 +84,6 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         dynamics_embedding=None
         stop_grad_dynamics_embedding=None
         if self.config['use_context']:
-            # dynamics_embedding = jnp.eye(10)[batch_context['layout_type']][:, 0, :].squeeze()
-            # stop_grad_dynamics_embedding = jnp.eye(10)[batch_context['layout_type']][:, 0, :].squeeze()
             if train_transformer:
                 dynamics_embedding, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
                                                                                 batch_context['next_observations'], train=True, return_embedding=True, params=grad_params)
@@ -158,17 +153,30 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         else:
             raise ValueError(f'Unsupported actor loss: {self.config["actor_loss"]}')
 
-    def transformer_loss(self, batch, grad_params, batch_context):
-        dynamics_embedding, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                batch_context['next_observations'], train=True, return_embedding=True, params=grad_params)
-        pred_next_context, pred_next_no_context = self.network.select('next_state_pred')(batch['observations'], batch['actions'][:, None], dynamics_embedding, params=grad_params)
+    def transformer_loss(self, batch, grad_params, batch_context, negative_context):
+        context_len = self.config['context_len']
+        dynamics_embedding_id, _ = self.network.select('dynamic_transformer')(batch_context['observations'][:, :context_len//2, :], batch_context['actions'][:, :context_len//2, :],
+                                                                                batch_context['next_observations'][:, :context_len//2, :], train=True, return_embedding=True, params=grad_params)
+        dynamics_embedding_id2, _ = self.network.select('dynamic_transformer')(batch_context['observations'][:, context_len//2:, :], batch_context['actions'][:, context_len//2:, :],
+                                                                                batch_context['next_observations'][:, context_len//2:, :], train=False, return_embedding=True)
+        dynamics_embedding_negative, _ = self.network.select('dynamic_transformer')(negative_context['observations'], negative_context['actions'],
+                                                                                negative_context['next_observations'], train=True, return_embedding=True, params=grad_params)
+        id_loss = (jnp.linalg.norm(dynamics_embedding_id - dynamics_embedding_id2, axis=-1)**2).sum()
+        contrastive_loss = (1 / (jnp.linalg.norm(dynamics_embedding_id - dynamics_embedding_negative, axis=-1)**2) + 0.1).sum()
+        loss = id_loss + contrastive_loss
+        # id_loss = jnp.sum((jnp.linalg.norm(dynamics_embedding_id[:, None, :] - dynamics_embedding_id[None, :, :], axis=-1)**2)[off_diag])
+        # negative_loss = jnp.sum(jnp.linalg.norm(dynamics_embedding_id[:, None, :] - dynamics_embedding_negative[None, :, :], axis=-1)**2)
+        # contrastive_loss = (1 / (negative_loss + 0.1))
+        # loss = id_loss + contrastive_loss
+        # WORLD MODEL LOSS
+        # pred_next_context, pred_next_no_context = self.network.select('next_state_pred')(batch['observations'], batch['actions'][:, None], dynamics_embedding, params=grad_params)
         
-        loss_no_context = optax.squared_error(pred_next_no_context, batch['next_observations']).mean()
-        loss_context = optax.squared_error(pred_next_context, batch['next_observations']).mean()
-        loss = loss_context + loss_no_context
+        # loss_no_context = optax.squared_error(pred_next_no_context, batch['next_observations']).mean()
+        # loss_context = optax.squared_error(pred_next_context, batch['next_observations']).mean()
+        # loss = loss_context + loss_no_context
         return loss, {"world_pred_loss": loss}
         
-    def total_loss(self, batch, grad_params, train_transformer, batch_context=None, rng=None):
+    def total_loss(self, batch, grad_params, train_transformer, negative_context=None, batch_context=None, rng=None):
         """Compute the total loss."""
         info = {}
         rng = rng if rng is not None else self.rng
@@ -192,7 +200,7 @@ class GCIQLAgent(flax.struct.PyTreeNode):
 
         trans_loss = 0.0
         if train_transformer:
-            trans_loss, trans_info = self.transformer_loss(batch, grad_params, batch_context=batch_context)
+            trans_loss, trans_info = self.transformer_loss(batch, grad_params, batch_context=batch_context, negative_context=negative_context)
             for k, v in trans_info.items():
                 info[f'world_model/{k}'] = v
         
@@ -209,12 +217,13 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         network.params[f'modules_target_{module_name}'] = new_target_params
 
     @partial(jax.jit, static_argnames=('train_transformer'))
-    def update(self, batch, batch_context=None, train_transformer=True):
+    def update(self, batch, batch_context=None, train_transformer=True, negative_context=None):
         """Update the agent and return a new agent with information dictionary."""
         new_rng, rng = jax.random.split(self.rng)
 
         def loss_fn(grad_params):
-            return self.total_loss(batch, grad_params, train_transformer=train_transformer, batch_context=batch_context, rng=rng)
+            return self.total_loss(batch, grad_params, train_transformer=train_transformer, batch_context=batch_context,
+                                   negative_context=negative_context,rng=rng)
 
         new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn)
         self.target_update(new_network, 'critic')

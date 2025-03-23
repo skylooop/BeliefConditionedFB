@@ -199,12 +199,12 @@ class DynamicsTransformer(nn.Module):
         states = nn.Dense(self.emb_dim // 2)(states)
         actions = nn.Dense(self.emb_dim // 2)(actions)
         
-        #next_states = nn.Dense(self.emb_dim)(next_states)
+        next_states = nn.Dense(self.emb_dim)(next_states)
         
         state_act_pair = jnp.concatenate([states, actions], axis=-1)
         # next_state_layout = jnp.concatenate([next_states, layout_type], axis=-1)
-        #x = jnp.stack((state_act_pair, next_states), axis=2).reshape(B, 2 * T, self.emb_dim)
-        x = state_act_pair
+        x = jnp.stack((state_act_pair, next_states), axis=2).reshape(B, 2 * T, self.emb_dim)
+        # x = state_act_pair
         for lyr in range(self.num_layers):
             x = Encoder1DBlock(
                     mlp_dim=self.mlp_dim,
