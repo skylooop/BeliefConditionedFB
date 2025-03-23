@@ -165,7 +165,7 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         
         loss_no_context = optax.squared_error(pred_next_no_context, batch['next_observations']).mean()
         loss_context = optax.squared_error(pred_next_context, batch['next_observations']).mean()
-        loss = 2 * loss_context + loss_no_context
+        loss = loss_context + loss_no_context
         return loss, {"world_pred_loss": loss}
         
     def total_loss(self, batch, grad_params, train_transformer, batch_context=None, rng=None):

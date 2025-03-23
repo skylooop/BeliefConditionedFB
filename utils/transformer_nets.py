@@ -220,7 +220,7 @@ class DynamicsTransformer(nn.Module):
         if return_embedding:
             return context_embedding, encoded
         
-        # emb_mean = nn.Dense(self.emb_dim)(context_embedding)
-        # emb_log_std = nn.Dense(self.emb_dim)(context_embedding)
+        emb_mean = nn.Dense(self.emb_dim)(context_embedding)
+        emb_log_std = nn.Dense(self.emb_dim)(context_embedding)
         
-        # return emb_mean, emb_log_std
+        return emb_mean, emb_log_std
