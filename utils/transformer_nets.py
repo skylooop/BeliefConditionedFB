@@ -172,8 +172,8 @@ class NextStatePrediction(nn.Module):
         self.state_no_context_pred = MLP((*self.hidden_dims, self.out_dim))
         
     def __call__(self, states, actions, context_emb):
-        pred_next_context = self.state_predictor(jnp.concatenate([states, actions], -1))
-        pred_next_no_context = self.state_no_context_pred(jnp.concatenate([states, actions, context_emb], -1))
+        pred_next_no_context = self.state_predictor(jnp.concatenate([states, actions], -1))
+        pred_next_context = self.state_no_context_pred(jnp.concatenate([states, actions, context_emb], -1))
         return pred_next_context, pred_next_no_context
 
 class DynamicsTransformer(nn.Module):
@@ -202,7 +202,6 @@ class DynamicsTransformer(nn.Module):
         next_states = nn.Dense(self.emb_dim)(next_states)
         
         state_act_pair = jnp.concatenate([states, actions], axis=-1)
-        # next_state_layout = jnp.concatenate([next_states, layout_type], axis=-1)
         x = jnp.stack((state_act_pair, next_states), axis=2).reshape(B, 2 * T, self.emb_dim)
         for lyr in range(self.num_layers):
             x = Encoder1DBlock(

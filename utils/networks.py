@@ -166,6 +166,59 @@ class RunningMeanStd(flax.struct.PyTreeNode):
 
         return self.replace(mean=new_mean, var=new_var, count=total_count)
 
+class MLPWithFiLM(nn.Module):
+    """MLP with FiLM conditioning applied to all hidden layers.
+    
+    Attributes:
+        hidden_dims: List of hidden layer sizes.
+        activations: Activation function (default: GELU).
+        kernel_init: Kernel initializer for dense layers.
+        layer_norm: Whether to apply layer normalization after activation.
+    """
+    hidden_dims: Sequence[int]
+    activations: Any = nn.gelu
+    kernel_init: Any = lecun_normal()
+    layer_norm: bool = False
+    
+    @nn.compact
+    def __call__(self, x, conditioning):
+        """Apply the MLP with FiLM conditioning.
+        
+        Args:
+            x: Input tensor (batch_size, input_dim), typically observations and goals.
+            conditioning: Conditioning tensor (batch_size, conditioning_dim), e.g., dynamics_embedding.
+            
+        Returns:
+            Output tensor (batch_size, hidden_dims[-1]).
+        """
+        def film_bias_init(rng, shape, dtype):
+            """Initialize bias for FiLM parameters: ones for gamma, zeros for beta."""
+            assert len(shape) == 1
+            size = shape[0] // 2
+            return jnp.concatenate([jnp.ones((size,), dtype), jnp.zeros((size,), dtype)])
+        
+        for i, size in enumerate(self.hidden_dims):
+            # Generate FiLM parameters (gamma and beta) from conditioning
+            film_params = nn.Dense(
+                2 * size,
+                kernel_init=nn.initializers.normal(stddev=0.02),
+                bias_init=film_bias_init
+            )(conditioning)  # Shape: (batch_size, 2 * size)
+            gamma, beta = jnp.split(film_params, 2, axis=-1)  # Each: (batch_size, size)
+            
+            # Apply dense layer transformation
+            x = nn.Dense(size, kernel_init=self.kernel_init)(x)  # Shape: (batch_size, size)
+            
+            # Apply FiLM: gamma * x + beta
+            x = gamma * x + beta
+            
+            # Apply activation
+            x = self.activations(x)
+            
+            # Apply layer normalization if enabled
+            if self.layer_norm:
+                x = nn.LayerNorm()(x)
+        return x
 
 class GCActor(nn.Module):
     """Goal-conditioned actor.
@@ -257,9 +310,18 @@ class GCDiscreteActor(nn.Module):
     final_fc_init_scale: float = 1e-2
     gc_encoder: nn.Module = None
     layer_norm: bool = False
+    use_film: bool = False
     
     def setup(self):
-        self.actor_net = MLP(self.hidden_dims, activate_final=True, layer_norm=self.layer_norm)
+        if not self.use_film:
+            self.actor_net = MLP(self.hidden_dims, activate_final=True, layer_norm=self.layer_norm)
+        else:
+            self.actor_net = MLPWithFiLM(
+                    hidden_dims=self.hidden_dims,
+                    activations=nn.gelu,
+                    kernel_init=lecun_normal(),
+                    layer_norm=self.layer_norm
+                )
         self.logit_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
 
     def __call__(
@@ -287,8 +349,10 @@ class GCDiscreteActor(nn.Module):
             if dynamics_embedding is not None:
                 inputs.append(dynamics_embedding)
             inputs = jnp.concatenate(inputs, axis=-1)
-        outputs = self.actor_net(inputs)
-
+        if not self.use_film:
+            outputs = self.actor_net(inputs)
+        else:
+            outputs = self.actor_net(inputs, dynamics_embedding)
         logits = self.logit_net(outputs)
 
         distribution = distrax.Categorical(logits=logits / jnp.maximum(1e-6, temperature))

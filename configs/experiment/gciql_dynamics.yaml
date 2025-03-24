@@ -24,11 +24,12 @@ agent:
   actor_loss: awr
   alpha: 0.003
   discrete: True
-
+  use_film: True
+  
   # Transformer
   use_context: True
   warmup_steps: 50000
-  n_blocks: 2
+  n_blocks: 3
   n_heads: 4
   h_dim: 128
   context_len: 128

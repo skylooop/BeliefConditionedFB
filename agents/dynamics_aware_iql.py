@@ -102,7 +102,7 @@ class GCIQLAgent(flax.struct.PyTreeNode):
             exp_a = jnp.exp(adv * self.config['alpha'])
             exp_a = jnp.minimum(exp_a, 100.0)
 
-            dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], dynamics_embedding=dynamics_embedding, params=grad_params)
+            dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], dynamics_embedding=stop_grad_dynamics_embedding, params=grad_params)
             log_prob = dist.log_prob(batch['actions'])
 
             actor_loss = -(exp_a * log_prob).mean()
@@ -166,17 +166,10 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         same_mask = ~jnp.eye(dynamics_embedding_id.shape[0], dtype=bool)
         same_loss = (same_pairs * same_mask).sum()
         diff_loss = (1.0 / (distances + 0.1)).sum()
-        loss = same_loss + diff_loss
-        # id_loss = jnp.sum((jnp.linalg.norm(dynamics_embedding_id[:, None, :] - dynamics_embedding_id[None, :, :], axis=-1)**2)[off_diag])
-        # negative_loss = jnp.sum(jnp.linalg.norm(dynamics_embedding_id[:, None, :] - dynamics_embedding_negative[None, :, :], axis=-1)**2)
-        # contrastive_loss = (1 / (negative_loss + 0.1))
-        # loss = id_loss + contrastive_loss
-        # WORLD MODEL LOSS
-        # pred_next_context, pred_next_no_context = self.network.select('next_state_pred')(batch['observations'], batch['actions'][:, None], dynamics_embedding, params=grad_params)
         
-        # loss_no_context = optax.squared_error(pred_next_no_context, batch['next_observations']).mean()
+        # pred_next_context, pred_next_no_context = self.network.select('next_state_pred')(batch['observations'], batch['actions'][..., None], dynamics_embedding_id, params=grad_params)
         # loss_context = optax.squared_error(pred_next_context, batch['next_observations']).mean()
-        # loss = loss_context + loss_no_context
+        loss = same_loss + diff_loss #+ loss_context
         return loss, {"world_pred_loss": loss}
         
     def total_loss(self, batch, grad_params, train_context_embedding, negative_context=None, batch_context=None, rng=None):
@@ -188,16 +181,16 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         actor_loss = 0.0
         
         if not train_context_embedding:
-            value_loss, value_info = self.value_loss(batch, grad_params, train_context_embedding=True, batch_context=batch_context)
+            value_loss, value_info = self.value_loss(batch, grad_params, train_context_embedding=False, batch_context=batch_context)
             for k, v in value_info.items():
                 info[f'value/{k}'] = v
 
-            critic_loss, critic_info = self.critic_loss(batch, grad_params, train_context_embedding=True, batch_context=batch_context)
+            critic_loss, critic_info = self.critic_loss(batch, grad_params, train_context_embedding=False, batch_context=batch_context)
             for k, v in critic_info.items():
                 info[f'critic/{k}'] = v
 
             rng, actor_rng = jax.random.split(rng)
-            actor_loss, actor_info = self.actor_loss(batch, grad_params, train_context_embedding=True, rng=actor_rng, batch_context=batch_context)
+            actor_loss, actor_info = self.actor_loss(batch, grad_params, train_context_embedding=False, rng=actor_rng, batch_context=batch_context)
             for k, v in actor_info.items():
                 info[f'actor/{k}'] = v
 
@@ -312,6 +305,7 @@ class GCIQLAgent(flax.struct.PyTreeNode):
                 hidden_dims=config['actor_hidden_dims'],
                 action_dim=action_dim,
                 gc_encoder=encoders.get('actor'),
+                use_film=False #config['use_film']
             )
         else:
             actor_def = GCActor(

@@ -17,6 +17,7 @@ import hydra
 from omegaconf import OmegaConf, DictConfig
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 plt.style.use(['seaborn-v0_8-colorblind', 'seaborn-v0_8-notebook'])
@@ -89,10 +90,16 @@ def main(cfg: DictConfig):
     if config['agent']['use_context']:
         layout_types = range(config['agent']['number_of_meta_envs']) # change to test zero-shot later
         # For debugging plots
-        layout0_embs = []
-        layout1_embs = []
-        layout2_embs = []
-        
+        # layout0_embs = []
+        # layout1_embs = []
+        # layout2_embs = []
+        _, batch_context_test0, _ = train_dataset.sample(512, layout_type=0,
+                                                                        context_length=config['agent']['context_len'])
+        _, batch_context_test1, _ = train_dataset.sample(512, layout_type=1,
+                                                                                context_length=config['agent']['context_len'])
+        colors = ['blue'] * batch_context_test0['observations'].shape[0] + ['red'] * batch_context_test1['observations'].shape[0]
+        test_embedding_data = jax.tree.map(lambda x, y: jnp.concatenate([x, y]), batch_context_test0, batch_context_test1)
+
     pbar = tqdm(range(1, config['train_steps'] + 1), colour='green', dynamic_ncols=True, position=0, leave=True)
     for step in pbar:
         key = jax.random.fold_in(key, step)
@@ -100,32 +107,34 @@ def main(cfg: DictConfig):
             batch = train_dataset.sample(config['agent']['batch_size'])
             agent, update_info = agent.update(batch)
         else:
-            batch, batch_context, _ = train_dataset.sample(config['agent']['batch_size'], layout_type=step % config['agent']['number_of_meta_envs'],
-                                                              context_length=config['agent']['context_len'])
-            agent, update_info = agent.update(batch, batch_context, train_transformer=True)
-            
+            batch, batch_context, _ = train_dataset.sample(config['agent']['batch_size'], layout_type=step % 2,
+                                                            context_length=config['agent']['context_len'])
+            _, negative_context, _ = train_dataset.sample(config['agent']['batch_size'], layout_type=(step + 1) % 2,
+                                                                context_length=config['agent']['context_len'])
+            agent, update_info = agent.update(batch, batch_context, train_context_embedding=step % 500 == 0 and step < 150_000, negative_context=negative_context)
+                
         # Log metrics.
         if step % config['log_interval'] == 0 or step == 1:
             train_metrics = {f'training/{k}': v for k, v in update_info.items()}
 
-            if config['agent']['use_context']:
-                batch, batch_context, _ = train_dataset.sample(1, layout_type=0,
-                                                                    context_length=config['agent']['context_len'])
-                dynamics_embedding, _ = agent.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                        batch_context['next_observations'], train=False, return_embedding=True)
-                layout0_embs.append(jax.device_get(dynamics_embedding))
+            # if config['agent']['use_context']:
+            #     batch, batch_context, _ = train_dataset.sample(1, layout_type=0,
+            #                                                         context_length=config['agent']['context_len'])
+            #     dynamics_embedding, _ = agent.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
+            #                                                                             batch_context['next_observations'], train=False, return_embedding=True)
+            #     layout0_embs.append(jax.device_get(dynamics_embedding))
             
-                batch, batch_context, _ = train_dataset.sample(1, layout_type=3,
-                                                                    context_length=config['agent']['context_len'])
-                dynamics_embedding, _ = agent.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                        batch_context['next_observations'], train=False, return_embedding=True)
-                layout1_embs.append(jax.device_get(dynamics_embedding))
+            #     batch, batch_context, _ = train_dataset.sample(1, layout_type=1,
+            #                                                         context_length=config['agent']['context_len'])
+            #     dynamics_embedding, _ = agent.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
+            #                                                                             batch_context['next_observations'], train=False, return_embedding=True)
+            #     layout1_embs.append(jax.device_get(dynamics_embedding))
                 
-                batch, batch_context, _ = train_dataset.sample(1, layout_type=6,
-                                                                    context_length=config['agent']['context_len'])
-                dynamics_embedding, _ = agent.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                        batch_context['next_observations'], train=False, return_embedding=True)
-                layout2_embs.append(jax.device_get(dynamics_embedding))
+            #     batch, batch_context, _ = train_dataset.sample(1, layout_type=2,
+            #                                                         context_length=config['agent']['context_len'])
+            #     dynamics_embedding, _ = agent.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
+            #                                                                             batch_context['next_observations'], train=False, return_embedding=True)
+            #     layout2_embs.append(jax.device_get(dynamics_embedding))
                 
     
             train_metrics['time/epoch_time'] = (time.time() - last_time) / config['log_interval']
@@ -249,7 +258,7 @@ def main(cfg: DictConfig):
                                                                                                         dataset_inference['next_observations'][None], train=False, return_embedding=True)
                             dynamics_embedding = dynamics_embedding.squeeze()
                         else:
-                            env.env.unwrapped._gen_grid = partial(env.env.unwrapped._gen_grid, layout_type=0) # other than 0 or 1 - random
+                            env.env.unwrapped._gen_grid = partial(env.env.unwrapped._gen_grid, layout_type=0)
                             dynamics_embedding=None
                             
                         obs, info = env.reset()
@@ -266,18 +275,18 @@ def main(cfg: DictConfig):
                         eval_metrics[f'draw_policy/draw_policy_task_{layout_type}'] = wandb.Image(pred_policy_img)
                     
                     if config['agent']['use_context']:
-                        embedding_img_mdps = image_mdps(train_dataset, embedding_fn=partial(agent.network.select('dynamic_transformer'),
-                                                                                            train=False, return_embedding=True), context_len=config['agent']['context_len'])
+                        embedding_img_mdps = image_mdps(test_embedding_data, embedding_fn=partial(agent.network.select('dynamic_transformer'),
+                                                                                                  train=False, return_embedding=True), colors=colors)
                         eval_metrics['draw_mdps_emb/PCA_mdps_emb_'] = wandb.Image(embedding_img_mdps)
                         
-                    if len(layout0_embs) > 30:
-                        evolution_pca_0_img = plot_image_pcas(np.concatenate(layout0_embs))
-                        evolution_pca_1_img = plot_image_pcas(np.concatenate(layout1_embs))
-                        evolution_pca_2_img = plot_image_pcas(np.concatenate(layout2_embs))
+                    # if len(layout0_embs) > 30:
+                    #     evolution_pca_0_img = plot_image_pcas(np.concatenate(layout0_embs))
+                    #     evolution_pca_1_img = plot_image_pcas(np.concatenate(layout1_embs))
+                    #     evolution_pca_2_img = plot_image_pcas(np.concatenate(layout2_embs))
                         
-                        eval_metrics[f'draw_emb/draw_evolution_emb_mdp_0'] = wandb.Image(evolution_pca_0_img)
-                        eval_metrics[f'draw_emb/draw_evolution_emb_mdp_1'] = wandb.Image(evolution_pca_1_img)
-                        eval_metrics[f'draw_emb/draw_evolution_emb_mdp_2'] = wandb.Image(evolution_pca_2_img)
+                    #     eval_metrics[f'draw_emb/draw_evolution_emb_mdp_0'] = wandb.Image(evolution_pca_0_img)
+                    #     eval_metrics[f'draw_emb/draw_evolution_emb_mdp_1'] = wandb.Image(evolution_pca_1_img)
+                    #     eval_metrics[f'draw_emb/draw_evolution_emb_mdp_2'] = wandb.Image(evolution_pca_2_img)
                     
                 wandb.log(eval_metrics, step=step)
                 eval_logger.log(eval_metrics, step=step)

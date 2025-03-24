@@ -23,7 +23,8 @@ agent:
   actor_loss: awr
   alpha: 0.003
   discrete: True
-
+  use_film: False
+  
   # Transformer
   use_context: False
 

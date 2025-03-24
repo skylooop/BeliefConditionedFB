@@ -5,8 +5,8 @@ discrete: ${env.discrete}
 # Dataset hyperparameters.
 dataset_class: GCDataset  # Dataset class name.
 value_p_curgoal: 0.2  # Probability of using the current state as the value goal.
-value_p_trajgoal: 0.5  # Probability of using a future state in the same trajectory as the value goal.
-value_p_randomgoal: 0.3  # Probability of using a random state as the value goal.
+value_p_trajgoal: 0.8  # Probability of using a future state in the same trajectory as the value goal.
+value_p_randomgoal: 0.0  # Probability of using a random state as the value goal.
 value_geom_sample: True  # Whether to use geometric sampling for future value goals.
 actor_p_curgoal: 0.0  # Probability of using the current state as the actor goal.
 actor_p_trajgoal: 1.0  # Probability of using a future state in the same trajectory as the actor goal.

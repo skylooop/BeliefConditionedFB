@@ -5,11 +5,14 @@ import jax
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-
+import math
+import functools
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from matplotlib.colors import LinearSegmentedColormap
-plt.style.use(['seaborn-v0_8-colorblind', 'seaborn-v0_8-notebook'])
+from matplotlib import gridspec as gridspec
+
+plt.style.use(['seaborn-v0_8-colorblind'])
 
 def random_exploration(env, num_episodes: int, layout_type: int):
     dataset = dict()
@@ -36,6 +39,55 @@ def random_exploration(env, num_episodes: int, layout_type: int):
         actions.append(np.stack(cur_actions))
         dones.append(np.stack(cur_dones))
     
+    dataset['observations'] = np.concatenate(observations)
+    dataset['terminals'] = np.concatenate(dones)
+    dataset['actions'] = np.concatenate(actions)
+    
+    ob_mask = (1.0 - dataset['terminals']).astype(bool)
+    next_ob_mask = np.concatenate([[False], ob_mask[:-1]])
+    dataset['next_observations'] = dataset['observations'][next_ob_mask]
+    dataset['observations'] = dataset['observations'][ob_mask]
+    dataset['actions'] = dataset['actions'][ob_mask].astype(np.int8)
+    new_terminals = np.concatenate([dataset['terminals'][1:], [1.0]])
+    dataset['terminals'] = new_terminals[ob_mask].astype(np.float32)
+    dataset['layout_type'] = np.repeat(np.array(layout_type), repeats=(dataset['actions'].shape[0], ))
+    return dataset, env
+
+def q_learning(env, num_episodes: int, layout_type: int, alpha=0.1, gamma=0.99, epsilon=0.5):
+    Q = np.zeros((env.env.unwrapped.width, env.env.unwrapped.height, env.env.unwrapped.action_space.n))
+    dataset = dict()
+    observations = []
+    actions = []
+    dones = []
+    
+    for _ in range(num_episodes):
+        env.reset()
+        done = False
+        step = 0
+        cur_observations = []
+        cur_actions = []
+        cur_dones = []
+        
+        while not done:
+            state = env.env.unwrapped.agent_pos
+            print(state)
+            cur_observations.append(np.array(state, dtype=np.float32))
+            if (np.random.rand() < epsilon) or step < 100:
+                action = env.env.unwrapped.action_space.sample()
+            else:
+                action = np.argmax(Q[state[0], state[1], :])
+            next_state, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            cur_actions.append(np.array(action, dtype=np.float32))
+            cur_dones.append(np.array(done, dtype=np.float32))
+            
+            Q[state[0], state[1], action] += alpha * (reward + gamma * np.max(Q[next_state[0], next_state[1], :]) - Q[state[0], state[1], action])
+            step+=1
+            
+        observations.append(np.stack(cur_observations))
+        actions.append(np.stack(cur_actions))
+        dones.append(np.stack(cur_dones))
+        
     dataset['observations'] = np.concatenate(observations)
     dataset['terminals'] = np.concatenate(dones)
     dataset['actions'] = np.concatenate(actions)
@@ -112,21 +164,32 @@ def plot_image_pcas(embs):
     plt.close(fig)
     return image
 
-def plot_image_mdps(dataset, fig, ax, embedding_fn, context_len):
-    for layout_type, name, color in zip([0, 3, 6], ['MDP1', 'MDP3', 'MDP6'], ['red', 'green', 'blue']):
-        batch, batch_context, _ = dataset.sample(512, layout_type=layout_type,
-                                                                    context_length=context_len)
-        dynamics_embedding, _ = embedding_fn(batch_context['observations'], batch_context['actions'], batch_context['next_observations'])
-        pca = PCA().fit_transform(dynamics_embedding)
-        ax.scatter(pca[:, 0], pca[:, 1], label=name, c=color)
-        
-    plt.legend()
+def plot_image_mdps(dataset, fig, ax, embedding_fn, method, colors):
+    dynamics_embedding, _ = embedding_fn(dataset['observations'], dataset['actions'], dataset['next_observations'])
+    projection = method().fit_transform(dynamics_embedding)
+    ax.scatter(projection[:, 0], projection[:, 1], c=colors)
+    
     return fig, ax
 
-def image_mdps(dataset, embedding_fn, context_len): # get embeddings from context encoder for different MDPs
+def most_squarelike(n):
+    c = int(n ** 0.5)
+    while c > 0:
+        if n %c in [0 , c-1]:
+            return (c, int(math.ceil(n / c)))
+        c -= 1
+        
+def image_mdps(dataset, embedding_fn, colors): # get embeddings from context encoder for different MDPs
+    h, w = most_squarelike(2)
+    gs = gridspec.GridSpec(h, w)
     fig = plt.figure(tight_layout=True)
     canvas = FigureCanvas(fig)
-    plot_image_mdps(dataset, fig=fig, ax=plt.gca(), embedding_fn=embedding_fn, context_len=context_len)
+    for i, (method, method_name) in enumerate(zip([PCA, functools.partial(TSNE, random_state=42)], ['PCA', 'TSNE'])):
+        wi, hi = i % w, i // w
+        ax = fig.add_subplot(gs[hi, wi])
+        plot_image_mdps(dataset, fig=fig, ax=ax, embedding_fn=embedding_fn, method=method, colors=colors)
+        ax.set_title(method_name)
+        
+    plt.tight_layout()
     image = get_canvas_image(canvas)
     plt.close(fig)
     return image
@@ -142,7 +205,7 @@ def value_image_doors(env, dataset, value_fn, action_fn=None, **kwargs):
 def doors_value_fn(agent, obs, goal, action, dynamics_embedding=None):
     q1, q2 = agent.network.select('critic')(obs, goal, action, dynamics_embedding=dynamics_embedding)
     q = jnp.minimum(q1, q2)
-    return q / 0.03
+    return q / 0.02
 
 def plot_value_image_doors(env, dataset, value_fn, action_fn, fig=None, ax=None, title=None, **kwargs):
     if fig is None or ax is None:
