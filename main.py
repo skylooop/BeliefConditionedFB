@@ -19,6 +19,8 @@ from omegaconf import OmegaConf, DictConfig
 import jax
 import numpy as np
 import matplotlib.pyplot as plt
+plt.style.use(['seaborn-v0_8-colorblind', 'seaborn-v0_8-notebook'])
+
 from tqdm.auto import tqdm
 import wandb
 from absl import app, flags
@@ -255,11 +257,11 @@ def main(cfg: DictConfig):
                         
                         pred_policy_img = policy_image_doors(env, example_batch,
                                                                         action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
-                                                                                        goals=goal, dynamics_embedding=dynamics_embedding, temperature=1.0),
+                                                                                        goals=goal, dynamics_embedding=dynamics_embedding, temperature=0.0),
                                                                         goal=goal)
                         pred_value_img = value_image_doors(env, example_batch,
                                 value_fn=partial(doors_value_fn, agent, dynamics_embedding=dynamics_embedding), action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
-                                                                    goals=goal, temperature=1.0, dynamics_embedding=dynamics_embedding), goal=goal)
+                                                                    goals=goal, temperature=0.0, dynamics_embedding=dynamics_embedding), goal=goal)
                         eval_metrics[f'draw_Q/draw_value_task_{layout_type}'] = wandb.Image(pred_value_img)
                         eval_metrics[f'draw_policy/draw_policy_task_{layout_type}'] = wandb.Image(pred_policy_img)
                     

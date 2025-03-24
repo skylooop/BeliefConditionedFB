@@ -334,7 +334,7 @@ class GCDataset:
     def sample_traj_random(self, batch_size, num_traj_states, num_random_states, num_random_states_decode):
         indx = np.random.randint(self.dataset.size-1, size=batch_size)
         batch = self.dataset.sample(batch_size, indx)
-        indx_expand = np.repeat(indx, num_traj_states-1) # (batch_size * num_traj_states)
+        indx_expand = np.repeat(indx, num_traj_states-1)
         traj_indx = self.sample_goals(indx_expand, p_trajgoal=1.0, p_curgoal=0.0, geom_sample=True, p_randomgoal=0.0)
         traj_indx = traj_indx.reshape(batch_size, num_traj_states-1) # (batch_size, num_traj_states)
         batch['traj_states'] = jax.tree_map(lambda arr: arr[traj_indx], self.dataset['observations'])

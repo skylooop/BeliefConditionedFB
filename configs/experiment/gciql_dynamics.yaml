@@ -14,7 +14,7 @@ tags: [dynamics_gciql, discrete]
 
 agent:
   lr: 3e-4
-  batch_size: 512
+  batch_size: 256
 
   # GCIQL
   const_std: True
@@ -30,7 +30,7 @@ agent:
   warmup_steps: 50000
   n_blocks: 2
   n_heads: 4
-  h_dim: 100
+  h_dim: 128
   context_len: 128
   number_of_meta_envs: 2
   use_masked_attention: False

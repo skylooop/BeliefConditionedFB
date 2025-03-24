@@ -204,7 +204,6 @@ class DynamicsTransformer(nn.Module):
         state_act_pair = jnp.concatenate([states, actions], axis=-1)
         # next_state_layout = jnp.concatenate([next_states, layout_type], axis=-1)
         x = jnp.stack((state_act_pair, next_states), axis=2).reshape(B, 2 * T, self.emb_dim)
-        # x = state_act_pair
         for lyr in range(self.num_layers):
             x = Encoder1DBlock(
                     mlp_dim=self.mlp_dim,
@@ -220,7 +219,7 @@ class DynamicsTransformer(nn.Module):
         if return_embedding:
             return context_embedding, encoded
         
-        emb_mean = nn.Dense(self.emb_dim)(context_embedding)
-        emb_log_std = nn.Dense(self.emb_dim)(context_embedding)
+        # emb_mean = nn.Dense(self.emb_dim)(context_embedding)
+        # emb_log_std = nn.Dense(self.emb_dim)(context_embedding)
         
-        return emb_mean, emb_log_std
+        # return emb_mean, emb_log_std

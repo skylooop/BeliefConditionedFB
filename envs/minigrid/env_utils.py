@@ -9,14 +9,14 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from matplotlib.colors import LinearSegmentedColormap
+plt.style.use(['seaborn-v0_8-colorblind', 'seaborn-v0_8-notebook'])
 
 def random_exploration(env, num_episodes: int, layout_type: int):
     dataset = dict()
     observations = []
     actions = []
     dones = []
-
-    # available_actions = np.array([0, 1, 2, 3])
+    
     for _ in range(num_episodes):
         env.reset()
         cur_observations = []
@@ -114,7 +114,7 @@ def plot_image_pcas(embs):
 
 def plot_image_mdps(dataset, fig, ax, embedding_fn, context_len):
     for layout_type, name, color in zip([0, 3, 6], ['MDP1', 'MDP3', 'MDP6'], ['red', 'green', 'blue']):
-        batch, batch_context, _ = dataset.sample(128, layout_type=layout_type,
+        batch, batch_context, _ = dataset.sample(512, layout_type=layout_type,
                                                                     context_length=context_len)
         dynamics_embedding, _ = embedding_fn(batch_context['observations'], batch_context['actions'], batch_context['next_observations'])
         pca = PCA().fit_transform(dynamics_embedding)
