@@ -188,11 +188,11 @@ class DynamicsTransformer(nn.Module):
     causal: bool = False
     
     @nn.compact
-    def __call__(self, states, actions, next_states, layout_type=None,
-                 train:bool=False, return_embedding=False):
+    def __call__(self, states, actions, next_states, goals=None,
+                 train: bool=False, return_embedding=False):
 
         assert states.ndim == 3  # (batch, len, dim)
-        #assert next_states.ndim == 3
+        assert next_states.ndim == 3
         assert actions.ndim == 3
         
         B, T, _ = states.shape
@@ -200,9 +200,10 @@ class DynamicsTransformer(nn.Module):
         actions = nn.Dense(self.emb_dim // 2)(actions)
         
         next_states = nn.Dense(self.emb_dim)(next_states)
-        
-        state_act_pair = jnp.concatenate([states, actions], axis=-1)
-        x = jnp.stack((state_act_pair, next_states), axis=2).reshape(B, 2 * T, self.emb_dim)
+        # goals = nn.Dense(self.emb_dim)(goals)
+        paired_input = jnp.concatenate([states, actions, next_states], axis=-1)
+        x = paired_input.reshape(B, T, self.emb_dim * 3)
+        # x = jnp.stack((state_act_pair, next_states), axis=2).reshape(B, 2 * T, self.emb_dim)
         for lyr in range(self.num_layers):
             x = Encoder1DBlock(
                     mlp_dim=self.mlp_dim,

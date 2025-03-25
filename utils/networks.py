@@ -29,24 +29,6 @@ def ensemblize(cls, num_qs, out_axes=0, **kwargs):
         **kwargs,
     )
 
-class RadialBasisFeatures(nn.Module):
-    sigma: float = 0.1
-    number_of_gaussians: int = 10
-    # for ant-medium envs
-    env_limits_x: Sequence[float] = (-1.2889566, 21.254427)
-    env_limits_y: Sequence[float] = (-1.1615522, 21.246302)
-
-    def setup(self):
-        self.centers = jnp.array([(x, y) for x in jnp.linspace(self.env_limits_x[0], self.env_limits_x[1], self.number_of_gaussians)
-                              for y in jnp.linspace(self.env_limits_y[0], self.env_limits_y[1], self.number_of_gaussians)])
-    
-    def __call__(self, x):
-        sx, sy = x[:2]
-        distances = jnp.sum((jnp.array([sx, sy]) - self.centers) ** 2, axis=1)
-        radial_xy = jnp.exp(-distances / self.sigma)
-        phi = jnp.concatenate([radial_xy, x[2:], jnp.array([1.0])])  # Add bias term
-        return phi
-    
 class Identity(nn.Module):
     """Identity layer."""
 
@@ -177,8 +159,9 @@ class MLPWithFiLM(nn.Module):
     """
     hidden_dims: Sequence[int]
     activations: Any = nn.gelu
-    kernel_init: Any = lecun_normal()
+    kernel_init: Any = default_init()
     layer_norm: bool = False
+    activate_final: bool = False
     
     @nn.compact
     def __call__(self, x, conditioning):
@@ -213,7 +196,8 @@ class MLPWithFiLM(nn.Module):
             x = gamma * x + beta
             
             # Apply activation
-            x = self.activations(x)
+            if self.activate_final:
+                x = self.activations(x)
             
             # Apply layer normalization if enabled
             if self.layer_norm:
@@ -538,13 +522,15 @@ class GCValue(nn.Module):
     layer_norm: bool = True
     ensemble: bool = True
     gc_encoder: nn.Module = None
-
+    use_film: bool = False
+    
     def setup(self):
         mlp_module = MLP
         if self.ensemble:
             mlp_module = ensemblize(mlp_module, 2)
+        if self.use_film:
+            mlp_module = ensemblize(MLPWithFiLM, 2)
         value_net = mlp_module((*self.hidden_dims, 1), activate_final=False, layer_norm=self.layer_norm)
-
         self.value_net = value_net
 
     def __call__(self, observations, goals=None, actions=None, dynamics_embedding=None):
@@ -563,12 +549,14 @@ class GCValue(nn.Module):
                 inputs.append(goals)
         if actions is not None:
             inputs.append(actions)
-        if dynamics_embedding is not None:
-            inputs.append(dynamics_embedding)
-        inputs = jnp.concatenate(inputs, axis=-1)
-
-        v = self.value_net(inputs).squeeze(-1)
-
+        if not self.use_film:
+            if dynamics_embedding is not None:
+                inputs.append(dynamics_embedding)
+            inputs = jnp.concatenate(inputs, axis=-1)
+            v = self.value_net(inputs).squeeze(-1)
+        else:
+            inputs = jnp.concatenate(inputs, axis=-1)
+            v = self.value_net(inputs, dynamics_embedding)
         return v
 
 

@@ -19,35 +19,45 @@ def random_exploration(env, num_episodes: int, layout_type: int):
     observations = []
     actions = []
     dones = []
+    valid_transitions = []
     
     for _ in range(num_episodes):
         env.reset()
         cur_observations = []
         cur_actions = []
         cur_dones = []
+        transition_possible = []
         done = False
         while not done:
+            prev_state = env.env.unwrapped.agent_pos
             cur_observations.append(np.array(env.env.unwrapped.agent_pos, dtype=np.float32))
             #action = np.random.choice(available_actions, replace=True)
             action = env.env.unwrapped.action_space.sample()
             next_state, reward, terminated, truncated, info = env.step(action)
+            if env.env.unwrapped.agent_pos == prev_state:
+                transition_possible.append(np.array(0, dtype=np.int8))
+            else:
+                transition_possible.append(np.array(1, dtype=np.int8))
             cur_actions.append(np.array(action, dtype=np.float32))
             done = truncated
             cur_dones.append(np.array(done, dtype=np.float32))
-
+            
         observations.append(np.stack(cur_observations))
         actions.append(np.stack(cur_actions))
         dones.append(np.stack(cur_dones))
-    
+        valid_transitions.append(np.stack(transition_possible))
+        
     dataset['observations'] = np.concatenate(observations)
     dataset['terminals'] = np.concatenate(dones)
     dataset['actions'] = np.concatenate(actions)
+    dataset['valid_transitions'] = np.concatenate(valid_transitions)
     
     ob_mask = (1.0 - dataset['terminals']).astype(bool)
     next_ob_mask = np.concatenate([[False], ob_mask[:-1]])
     dataset['next_observations'] = dataset['observations'][next_ob_mask]
     dataset['observations'] = dataset['observations'][ob_mask]
     dataset['actions'] = dataset['actions'][ob_mask].astype(np.int8)
+    dataset['valid_transitions'] = dataset['valid_transitions'][ob_mask].astype(np.int8)
     new_terminals = np.concatenate([dataset['terminals'][1:], [1.0]])
     dataset['terminals'] = new_terminals[ob_mask].astype(np.float32)
     dataset['layout_type'] = np.repeat(np.array(layout_type), repeats=(dataset['actions'].shape[0], ))
