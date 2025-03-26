@@ -14,7 +14,10 @@ from matplotlib import gridspec as gridspec
 
 plt.style.use(['seaborn-v0_8-colorblind'])
 
-def random_exploration(env, num_episodes: int, layout_type: int):
+def one_hot(a, num_classes):
+  return np.squeeze(np.eye(num_classes)[a.reshape(-1)])
+
+def random_exploration(env, num_episodes: int, layout_type: int, num_mdp: int):
     dataset = dict()
     observations = []
     actions = []
@@ -31,13 +34,12 @@ def random_exploration(env, num_episodes: int, layout_type: int):
         while not done:
             prev_state = env.env.unwrapped.agent_pos
             cur_observations.append(np.array(env.env.unwrapped.agent_pos, dtype=np.float32))
-            #action = np.random.choice(available_actions, replace=True)
             action = env.env.unwrapped.action_space.sample()
             next_state, reward, terminated, truncated, info = env.step(action)
             if env.env.unwrapped.agent_pos == prev_state:
-                transition_possible.append(np.array(0, dtype=np.int8))
+                transition_possible.append(np.array(0, dtype=np.uint8))
             else:
-                transition_possible.append(np.array(1, dtype=np.int8))
+                transition_possible.append(np.array(1, dtype=np.uint8))
             cur_actions.append(np.array(action, dtype=np.float32))
             done = truncated
             cur_dones.append(np.array(done, dtype=np.float32))
@@ -57,10 +59,10 @@ def random_exploration(env, num_episodes: int, layout_type: int):
     dataset['next_observations'] = dataset['observations'][next_ob_mask]
     dataset['observations'] = dataset['observations'][ob_mask]
     dataset['actions'] = dataset['actions'][ob_mask].astype(np.int8)
-    dataset['valid_transitions'] = dataset['valid_transitions'][ob_mask].astype(np.int8)
+    dataset['valid_transitions'] = dataset['valid_transitions'][ob_mask].astype(np.uint8)
     new_terminals = np.concatenate([dataset['terminals'][1:], [1.0]])
     dataset['terminals'] = new_terminals[ob_mask].astype(np.float32)
-    dataset['layout_type'] = np.repeat(np.array(layout_type), repeats=(dataset['actions'].shape[0], ))
+    dataset['layout_type'] = np.tile(one_hot(np.array(layout_type), num_mdp), reps=(dataset['actions'].shape[0], 1)) #np.repeat(np.array(layout_type), repeats=(dataset['actions'].shape[0], ))
     return dataset, env
 
 def q_learning(env, num_episodes: int, layout_type: int, alpha=0.1, gamma=0.99, epsilon=0.5):

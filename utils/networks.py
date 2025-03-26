@@ -312,6 +312,7 @@ class GCDiscreteActor(nn.Module):
         self,
         observations,
         goals=None,
+        mdp_num=None,
         dynamics_embedding=None,
         goal_encoded=False,
         temperature=1.0,
@@ -328,11 +329,13 @@ class GCDiscreteActor(nn.Module):
             inputs = self.gc_encoder(observations, goals, goal_encoded=goal_encoded)
         else:
             inputs = [observations]
-            if goals is not None:
-                inputs.append(goals)
-            if dynamics_embedding is not None:
-                inputs.append(dynamics_embedding)
-            inputs = jnp.concatenate(inputs, axis=-1)
+        if goals is not None:
+            inputs.append(goals)
+        if dynamics_embedding is not None:
+            inputs.append(dynamics_embedding)
+        if mdp_num is not None:
+            inputs.append(mdp_num)
+        inputs = jnp.concatenate(inputs, axis=-1)
         if not self.use_film:
             outputs = self.actor_net(inputs)
         else:
@@ -533,7 +536,7 @@ class GCValue(nn.Module):
         value_net = mlp_module((*self.hidden_dims, 1), activate_final=False, layer_norm=self.layer_norm)
         self.value_net = value_net
 
-    def __call__(self, observations, goals=None, actions=None, dynamics_embedding=None):
+    def __call__(self, observations, goals=None, actions=None, mdp_num=None, dynamics_embedding=None):
         """Return the value/critic function.
 
         Args:
@@ -549,6 +552,8 @@ class GCValue(nn.Module):
                 inputs.append(goals)
         if actions is not None:
             inputs.append(actions)
+        if mdp_num is not None:
+            inputs.append(mdp_num)
         if not self.use_film:
             if dynamics_embedding is not None:
                 inputs.append(dynamics_embedding)
@@ -565,9 +570,9 @@ class GCDiscreteCritic(GCValue):
 
     action_dim: int = None
 
-    def __call__(self, observations, goals=None, actions=None, dynamics_embedding=None):
+    def __call__(self, observations, goals=None, actions=None, mdp_num=None, dynamics_embedding=None):
         actions = jnp.eye(self.action_dim)[actions]
-        return super().__call__(observations, goals, actions, dynamics_embedding)
+        return super().__call__(observations, goals, actions, mdp_num, dynamics_embedding)
 
 
 class GCBilinearValue(nn.Module):

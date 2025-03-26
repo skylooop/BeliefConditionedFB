@@ -50,6 +50,7 @@ class IdentityLayer(nn.Module):
 
 class AddPositionEmbs(nn.Module):
     # Need to define function that adds the poisition embeddings to the input.
+    context_len: int
     posemb_init: Callable[[PRNGKey, Shape, Dtype], Array]
 
     @nn.compact
@@ -60,20 +61,14 @@ class AddPositionEmbs(nn.Module):
         """
         assert inputs.ndim == 3, ('Number of dimensions should be 3, but it is: %d' % inputs.ndim)
 
-        position_ids = jnp.arange(inputs.shape[1])[None] # (1, timesteps)
+        position_ids = jnp.arange(self.context_len)[None] # (1, timesteps)
         pos_embeddings = nn.Embed(
-            128, # Max Positional Embeddings
+            self.context_len, # Max Positional Embeddings
             inputs.shape[2],
             embedding_init=self.posemb_init,
             dtype=inputs.dtype,
         )(position_ids)
-        print("For Input Shape {}, Pos Embes Shape is {}".format(inputs.shape, pos_embeddings.shape))
         return inputs + pos_embeddings
-
-        # pos_emb_shape = (1, inputs.shape[1], inputs.shape[2])
-        # pe = self.param('pos_embedding', self.posemb_init, pos_emb_shape)
-        # return inputs + pe
-
 
 class MlpBlock(nn.Module):
     """Transformer MLP / feed-forward block."""
@@ -178,47 +173,59 @@ class NextStatePrediction(nn.Module):
 
 class DynamicsTransformer(nn.Module):
     num_layers: int
+    num_heads: int
     emb_dim: int
     mlp_dim: int
-    num_heads: int
     dropout_rate: float
-    num_layouts: int
-    action_dim: int # discritizing actions
     attention_dropout_rate: float
+    action_dim: int
+    context_len: int
     causal: bool = False
-    
+
     @nn.compact
-    def __call__(self, states, actions, next_states, goals=None,
-                 train: bool=False, return_embedding=False):
-
-        assert states.ndim == 3  # (batch, len, dim)
-        assert next_states.ndim == 3
-        assert actions.ndim == 3
-        
+    def __call__(self, states, actions, next_states, valid_transition = None, train=False, return_embedding=True):
         B, T, _ = states.shape
-        states = nn.Dense(self.emb_dim // 2)(states)
-        actions = nn.Dense(self.emb_dim // 2)(actions)
         
-        next_states = nn.Dense(self.emb_dim)(next_states)
-        # goals = nn.Dense(self.emb_dim)(goals)
-        paired_input = jnp.concatenate([states, actions, next_states], axis=-1)
-        x = paired_input.reshape(B, T, self.emb_dim * 3)
-        # x = jnp.stack((state_act_pair, next_states), axis=2).reshape(B, 2 * T, self.emb_dim)
-        for lyr in range(self.num_layers):
-            x = Encoder1DBlock(
-                    mlp_dim=self.mlp_dim,
-                    dropout_rate=self.dropout_rate,
-                    attention_dropout_rate=self.attention_dropout_rate,
-                    name=f'encoderblock_{lyr}',
-                    causal=self.causal,
-                    num_heads=self.num_heads)(
-                            x, deterministic=not train, train=train)
-        encoded = nn.LayerNorm(name='encoder_norm')(x)
-        context_embedding = encoded.mean(axis=1)
+        # 1. Embed Individual Components
+        state_emb = nn.Dense(self.emb_dim, name='state_embed')(states)
+        action_emb = nn.Embed(self.action_dim, self.emb_dim, name='action_embed')(actions.squeeze(-1))
+        next_state_emb = nn.Dense(self.emb_dim, name='next_state_embed')(next_states)
+        if valid_transition is not None:
+            valid_transition = nn.Embed(2, self.emb_dim, name='transition_embed')(valid_transition.squeeze(-1))
+            transitions = jnp.concatenate([
+                state_emb,
+                action_emb,
+                next_state_emb,
+                valid_transition
+            ], axis=-1)
+        else:
+            # 2. Create Transition Tokens
+            transitions = jnp.concatenate([
+                state_emb,
+                action_emb,
+                next_state_emb,
+            ], axis=-1)
+        
+        # # 3. Add Positional Encoding
+        # transitions = AddPositionEmbs(
+        #     context_len=self.context_len,
+        #     posemb_init=nn.initializers.normal(stddev=0.02),
+        #     name='pos_embed'
+        # )(transitions)
 
-        if return_embedding:
-            return context_embedding, encoded
+        # 4. Transformer Processing
+        for _ in range(self.num_layers):
+            transitions = Encoder1DBlock(
+                mlp_dim=self.mlp_dim,
+                num_heads=self.num_heads,
+                dropout_rate=self.dropout_rate,
+                attention_dropout_rate=self.attention_dropout_rate,
+                causal=self.causal
+            )(transitions, deterministic=not train)
         
+        context_embedding = transitions.mean(1)
+        return context_embedding
+        # return context_embedding, transitions
         # emb_mean = nn.Dense(self.emb_dim)(context_embedding)
         # emb_log_std = nn.Dense(self.emb_dim)(context_embedding)
         

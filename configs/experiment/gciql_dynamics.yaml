@@ -29,11 +29,11 @@ agent:
   # Transformer
   use_context: True
   warmup_steps: 50000
-  n_blocks: 3
-  n_heads: 4
-  h_dim: 128
+  n_blocks: 2
+  n_heads: 2
+  emb_dim: 64
   context_len: 128
-  number_of_meta_envs: 2
+  number_of_meta_envs: 128
   use_masked_attention: False
   use_mean_embedding: True
   cosine_schedule: False

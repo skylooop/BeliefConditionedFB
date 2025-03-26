@@ -35,14 +35,15 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         if self.config['use_context']:
             if train_context_embedding:
                 dynamics_embedding, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                batch_context['next_observations'], jnp.tile(batch['value_goals'][:, None], reps=(1, self.config['context_len'], 1)), train=True, return_embedding=True, params=grad_params)
+                                                                                batch_context['next_observations'], batch_context['valid_transitions'], train=True, return_embedding=True, params=grad_params)
             else:
                 dynamics_embedding, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                batch_context['next_observations'], jnp.tile(batch['value_goals'][:, None], reps=(1, self.config['context_len'], 1)), train=False, return_embedding=True)
-            stop_grad_dynamics_embedding = jax.lax.stop_gradient(dynamics_embedding)
-        q1, q2 = self.network.select('target_critic')(batch['observations'], batch['value_goals'], batch['actions'], stop_grad_dynamics_embedding)
+                                                                                batch_context['next_observations'], batch_context['valid_transitions'], train=False, return_embedding=True)
+            stop_grad_dynamics_embedding = jax.lax.stop_gradient(dynamics_embedding) # batch['layout_type']
+        q1, q2 = self.network.select('target_critic')(batch['observations'], batch['value_goals'], batch['actions'], batch['layout_type'],
+                                                      stop_grad_dynamics_embedding)
         q = jnp.minimum(q1, q2)
-        v = self.network.select('value')(batch['observations'], batch['value_goals'], dynamics_embedding=dynamics_embedding, params=grad_params)
+        v = self.network.select('value')(batch['observations'], batch['value_goals'], batch['layout_type'], dynamics_embedding=dynamics_embedding, params=grad_params)
         value_loss = self.expectile_loss(q - v, q - v, self.config['expectile']).mean()
 
         return value_loss, {
@@ -59,16 +60,16 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         if self.config['use_context']:
             if train_context_embedding:
                 dynamics_embedding, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                batch_context['next_observations'], jnp.tile(batch['value_goals'][:, None], reps=(1, self.config['context_len'], 1)), train=True, return_embedding=True, params=grad_params)
+                                                                                batch_context['next_observations'], batch_context['valid_transitions'], train=True, return_embedding=True, params=grad_params)
             else:
                 dynamics_embedding, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                batch_context['next_observations'], jnp.tile(batch['value_goals'][:, None], reps=(1, self.config['context_len'], 1)), train=False, return_embedding=True)
+                                                                                batch_context['next_observations'], batch_context['valid_transitions'], train=False, return_embedding=True)
             stop_grad_dynamics_embedding = jax.lax.stop_gradient(dynamics_embedding)
-        next_v = self.network.select('value')(batch['next_observations'], batch['value_goals'], dynamics_embedding=stop_grad_dynamics_embedding)
+        next_v = self.network.select('value')(batch['next_observations'], batch['value_goals'], batch['layout_type'], dynamics_embedding=stop_grad_dynamics_embedding)
         q = batch['rewards'] + self.config['discount'] * batch['masks'] * next_v
 
         q1, q2 = self.network.select('critic')(
-            batch['observations'], batch['value_goals'], batch['actions'], params=grad_params, dynamics_embedding=dynamics_embedding
+            batch['observations'], batch['value_goals'], batch['actions'],batch['layout_type'], params=grad_params, dynamics_embedding=dynamics_embedding
         )
         critic_loss = ((q1 - q) ** 2 + (q2 - q) ** 2).mean()
 
@@ -86,23 +87,23 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         if self.config['use_context']:
             if train_context_embedding:
                 dynamics_embedding, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                batch_context['next_observations'], jnp.tile(batch['actor_goals'][:, None], reps=(1, self.config['context_len'], 1)), train=True, return_embedding=True, params=grad_params)
+                                                                                batch_context['next_observations'], batch_context['valid_transitions'], train=True, return_embedding=True, params=grad_params)
             else:
                 dynamics_embedding, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                batch_context['next_observations'], jnp.tile(batch['actor_goals'][:, None], reps=(1, self.config['context_len'], 1)), train=False, return_embedding=True)
+                                                                                batch_context['next_observations'], batch_context['valid_transitions'], train=False, return_embedding=True)
             stop_grad_dynamics_embedding = jax.lax.stop_gradient(dynamics_embedding)
             
         if self.config['actor_loss'] == 'awr':
             # AWR loss.
-            v = self.network.select('value')(batch['observations'], batch['actor_goals'], dynamics_embedding=stop_grad_dynamics_embedding)
-            q1, q2 = self.network.select('critic')(batch['observations'], batch['actor_goals'], batch['actions'], dynamics_embedding=stop_grad_dynamics_embedding)
+            v = self.network.select('value')(batch['observations'], batch['actor_goals'], batch['layout_type'], dynamics_embedding=stop_grad_dynamics_embedding)
+            q1, q2 = self.network.select('critic')(batch['observations'], batch['actor_goals'], batch['actions'],batch['layout_type'], dynamics_embedding=stop_grad_dynamics_embedding)
             q = jnp.minimum(q1, q2)
             adv = q - v
 
             exp_a = jnp.exp(adv * self.config['alpha'])
             exp_a = jnp.minimum(exp_a, 100.0)
 
-            dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], dynamics_embedding=dynamics_embedding, params=grad_params)
+            dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], batch['layout_type'], dynamics_embedding=dynamics_embedding, params=grad_params)
             log_prob = dist.log_prob(batch['actions'])
 
             actor_loss = -(exp_a * log_prob).mean()
@@ -156,9 +157,9 @@ class GCIQLAgent(flax.struct.PyTreeNode):
 
     def focal_representation_loss(self, batch, grad_params, batch_context, negative_context):
         dynamics_embedding_id, _ = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                batch_context['next_observations'], jnp.tile(batch['value_goals'][:, None], reps=(1, self.config['context_len'], 1)), train=True, return_embedding=True, params=grad_params)
+                                                                                batch_context['next_observations'], batch_context['valid_transitions'], train=True, return_embedding=True, params=grad_params)
         dynamics_embedding_negative, _ = self.network.select('dynamic_transformer')(negative_context['observations'], negative_context['actions'],
-                                                                                negative_context['next_observations'], jnp.tile(batch['value_goals'][:, None], reps=(1, self.config['context_len'], 1)), train=True, return_embedding=True, params=grad_params)
+                                                                                negative_context['next_observations'], batch_context['valid_transitions'], train=True, return_embedding=True, params=grad_params)
         
         distances = jnp.linalg.norm(dynamics_embedding_id[:, None] - dynamics_embedding_negative[None, :], axis=-1)
         distances = jnp.clip(distances, a_min=1e-3)
@@ -194,13 +195,13 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         for k, v in actor_info.items():
             info[f'actor/{k}'] = v
 
-        trans_loss = 0.0
-        if train_context_embedding:
-            trans_loss, trans_info = self.focal_representation_loss(batch, grad_params, batch_context=batch_context, negative_context=negative_context)
-            for k, v in trans_info.items():
-                info[f'focal_repr_loss/{k}'] = v
+        # trans_loss = 0.0
+        # if train_context_embedding:
+        #     trans_loss, trans_info = self.focal_representation_loss(batch, grad_params, batch_context=batch_context, negative_context=negative_context)
+        #     for k, v in trans_info.items():
+        #         info[f'focal_repr_loss/{k}'] = v
         
-        loss = value_loss + critic_loss + actor_loss + trans_loss
+        loss = value_loss + critic_loss + actor_loss #+ trans_loss
         return loss, info
 
     def target_update(self, network, module_name):
@@ -230,13 +231,14 @@ class GCIQLAgent(flax.struct.PyTreeNode):
     def sample_actions(
         self,
         observations,
+        mdp_type=None,
         dynamics_embedding=None,
         goals=None,
         seed=None,
         temperature=1.0,
     ):
         """Sample actions from the actor."""
-        dist = self.network.select('actor')(observations, goals, dynamics_embedding=dynamics_embedding, temperature=temperature)
+        dist = self.network.select('actor')(observations, goals, mdp_num=mdp_type, dynamics_embedding=dynamics_embedding, temperature=temperature)
         actions = dist.sample(seed=seed)
         if not self.config['discrete']:
             actions = jnp.clip(actions, -1, 1)
@@ -318,38 +320,40 @@ class GCIQLAgent(flax.struct.PyTreeNode):
                 gc_encoder=encoders.get('actor'),
             )
         if config['use_context']:
-            dynamics_embedding = jnp.zeros((1, config['h_dim'] * 3)) # jnp.zeros((1, config['number_of_meta_envs']))#
+            dynamics_embedding = jnp.zeros((1, config['emb_dim'] * 4))
+        
+        mdp_layout_one_hot = jnp.zeros((1, config['number_of_meta_envs']))
         network_info = dict(
-            value=(value_def, (ex_observations, ex_goals) if not config['use_context'] else (ex_observations, ex_goals, None, dynamics_embedding)),
-            critic=(critic_def, (ex_observations, ex_goals, ex_actions) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding)),
-            target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_goals, ex_actions) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding)),
-            actor=(actor_def, (ex_observations, ex_goals) if not config['use_context'] else (ex_observations, ex_goals, dynamics_embedding)),
+            value=(value_def, (ex_observations, ex_goals, None, mdp_layout_one_hot) if not config['use_context'] else (ex_observations, ex_goals, None, dynamics_embedding)),
+            critic=(critic_def, (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding)),
+            target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding)),
+            actor=(actor_def, (ex_observations, ex_goals, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, dynamics_embedding)),
         )
         
         if config['use_context']:
             # Meaning meta-training on different dynamics
-            from utils.transformer_nets import DynamicsTransformer, LayoutClassifier, NextStatePrediction
+            from utils.transformer_nets import DynamicsTransformer#, LayoutClassifier, NextStatePrediction
             
             # layout_classifier_def = LayoutClassifier(hidden_dims=(512, 512, 512), num_layouts=config['number_of_meta_envs'])
-            next_state_pred_def = NextStatePrediction(hidden_dims=(256, 256, 256), out_dim=ex_observations.shape[-1])
+            # next_state_pred_def = NextStatePrediction(hidden_dims=(256, 256, 256), out_dim=ex_observations.shape[-1])
             dynamics_def = DynamicsTransformer(
                 num_layers=config['n_blocks'],
                 num_heads=config['n_heads'],
+                action_dim=action_dim,
                 causal=False, # make permutation-equivariant
-                emb_dim=config['h_dim'],
+                emb_dim=config['emb_dim'],
                 mlp_dim=256,
                 dropout_rate=0.0,
                 attention_dropout_rate=0.0,
-                action_dim=action_dim,
-                num_layouts=config['number_of_meta_envs']
+                context_len=config['context_len']
             )
             network_info.update(
                 dynamic_transformer=(dynamics_def, (ex_observations[None], jnp.atleast_3d(ex_actions),
-                                                    ex_observations[None], ex_observations[None], True, True))
+                                                    ex_observations[None], jnp.zeros((1, 1, 1), dtype=jnp.uint8), True, True))
             )
-            network_info.update(
-                next_state_pred=(next_state_pred_def, (ex_observations, ex_actions[None], jnp.zeros((1, config['h_dim']))))
-            )
+            # network_info.update(
+            #     next_state_pred=(next_state_pred_def, (ex_observations, ex_actions[None], jnp.zeros((1, config['emb_dim']))))
+            # )
             
         networks = {k: v[0] for k, v in network_info.items()}
         network_args = {k: v[1] for k, v in network_info.items()}
