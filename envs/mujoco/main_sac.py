@@ -44,11 +44,11 @@ flags.DEFINE_string('restore_path', None, 'Restore path.')
 flags.DEFINE_integer('restore_epoch', None, 'Restore epoch.')
 
 flags.DEFINE_integer('seed_steps', 10000, 'Number of seed steps.') # replay buffer init
-flags.DEFINE_integer('train_steps', 1000000, 'Number of training steps.')
+flags.DEFINE_integer('train_steps', 500000, 'Number of training steps.')
 flags.DEFINE_integer('train_interval', 1, 'Train interval.')
 flags.DEFINE_integer('num_epochs', 1, 'Number of updates per train interval.')
-flags.DEFINE_integer('log_interval', 5000, 'Logging interval.')
-flags.DEFINE_integer('eval_interval', 11000, 'Evaluation interval.')
+flags.DEFINE_integer('log_interval', 20000, 'Logging interval.')
+flags.DEFINE_integer('eval_interval', 100000, 'Evaluation interval.')
 flags.DEFINE_integer('save_interval', 1000000, 'Saving interval.')
 flags.DEFINE_integer('reset_interval', 0, 'Full parameter reset interval.')
 flags.DEFINE_integer('terminate_at_end', 0, 'Whether to set terminated=True when truncated=True.')
@@ -63,10 +63,61 @@ flags.DEFINE_integer('eval_on_cpu', 0, 'Whether to evaluate on CPU.')
 config_flags.DEFINE_config_file('agent', 'agents/sac.py', lock_config=False)
 
 
+import numpy as np
+from collections import defaultdict
+
+def convert_trajs_to_dict(trajs, pad_value=0.0):
+    """Convert list of trajectory dicts to a single dict with stacked arrays.
+    
+    Args:
+        trajs: List of dictionaries, each containing trajectory data.
+        pad_value: Value to use for padding shorter trajectories.
+        
+    Returns:
+        Dictionary with stacked arrays of shape (num_trajectories, max_traj_length, dim).
+    """
+    if not trajs:
+        return {}
+    
+    # Determine maximum trajectory length
+    max_length = max(len(traj['observation']) for traj in trajs)
+    
+    # Initialize output dictionary
+    result = defaultdict(list)
+    
+    # Get all field names from the first trajectory
+    field_names = trajs[0].keys()
+    
+    for traj in trajs:
+        traj_length = len(traj['observation'])
+        pad_length = max_length - traj_length
+        
+        for field in field_names:
+            # Get the array for this field
+            arr = np.array(traj[field])
+            
+            # Pad if necessary
+            if pad_length > 0:
+                if arr.ndim == 1:
+                    # For 1D arrays (like rewards, done)
+                    arr = np.pad(arr, (0, pad_length), constant_values=pad_value)
+                else:
+                    # For multi-dimensional arrays (like observations, actions)
+                    pad_width = [(0, pad_length)] + [(0, 0)] * (arr.ndim - 1)
+                    arr = np.pad(arr, pad_width, constant_values=pad_value)
+            
+            result[field].append(arr)
+    
+    # Stack all trajectories for each field
+    for field in result:
+        result[field] = np.stack(result[field])
+    
+    return dict(result)
+
 def main(_):
     # Set up logger.
     exp_name = get_exp_name(FLAGS.seed)
-    setup_wandb(project='dynamics_ant', group=FLAGS.run_group, name=exp_name, mode='offline', tags=['sac_ant'])
+    setup_wandb(project='dynamics_ant', group=FLAGS.run_group, name=exp_name, mode='online', tags=['sac_ant', f"dyn_ind_{FLAGS.default_ind}"])
 
     FLAGS.save_dir = os.path.join(FLAGS.save_dir, wandb.run.project, FLAGS.run_group, exp_name)
     os.makedirs(FLAGS.save_dir, exist_ok=True)
@@ -77,8 +128,8 @@ def main(_):
     config = FLAGS.agent
     
     # Set up environments and replay buffer.
-    env = make_online_env("myant", default_ind=0)
-    eval_env = make_online_env("myant", default_ind=0)
+    env = make_online_env("myant-xy", default_ind=FLAGS.default_ind)
+    eval_env = make_online_env("myant-xy", default_ind=FLAGS.default_ind)
 
     example_transition = dict(
         observations=env.observation_space.sample(),
@@ -191,8 +242,8 @@ def main(_):
             eval_logger.log(eval_metrics, step=i)
 
         # Save agent.
-        if i % FLAGS.save_interval == 0:
-            save_agent(agent, FLAGS.save_dir, i)
+        # if i % FLAGS.save_interval == 0:
+        #     save_agent(agent, FLAGS.save_dir, i)
 
         # Reset agent.
         if FLAGS.reset_interval > 0 and i % FLAGS.reset_interval == 0:
@@ -206,6 +257,21 @@ def main(_):
                 network=agent.network.replace(params=new_agent.network.params, opt_state=new_agent.network.opt_state)
             )
             del new_agent
+    
+    # collect data
+    eval_info, trajs, cur_renders = evaluate(
+        agent=agent,
+        env=eval_env,
+        config=config,
+        num_eval_episodes=200, # collect 200 trajs
+        num_video_episodes=0,
+        video_frame_skip=0,
+    )
+    dataset = convert_trajs_to_dict(trajs)
+    
+    for path, data in [(f"/home/m_bobrin/ZeroShotRL/envs/mujoco/data_custom_ant/default_ind_{FLAGS.default_ind}.npz", dataset)]:
+        np.savez_compressed(path, **data)
+    
     train_logger.close()
     eval_logger.close()
 

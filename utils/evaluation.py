@@ -248,7 +248,7 @@ def evaluate_classic(
             transition = dict(
                 observation=observation,
                 next_observation=next_observation,
-                action=action,
+                actions=action,
                 reward=reward,
                 done=done,
                 info=info,

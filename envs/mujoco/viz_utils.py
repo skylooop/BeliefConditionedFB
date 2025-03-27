@@ -17,6 +17,10 @@ def get_2d_colors(points, min_point, max_point):
 
     return colors
 
+def get_canvas_image(canvas):
+    canvas.draw() 
+    out_image = np.asarray(canvas.buffer_rgba())
+    return out_image
 
 def visualize_trajs(env_name, trajs):
     """Visualize x-y trajectories in locomotion environments.
@@ -47,6 +51,7 @@ def visualize_trajs(env_name, trajs):
 
     fig.tight_layout()
     canvas.draw()
-    out_image = np.frombuffer(canvas.tostring_rgb(), dtype='uint8')
-    out_image = out_image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    
+    out_image = get_canvas_image(canvas)
+
     return out_image
