@@ -118,9 +118,10 @@ class Encoder1DBlock(nn.Module):
     def __call__(self, inputs, *, deterministic, train=True):
 
         if self.causal:
-            causal_mask = nn.make_causal_mask(jnp.ones((inputs.shape[0], inputs.shape[1]),
-                                                        dtype="bool"), dtype="bool")
-            print("Using Causal Mask with shape", causal_mask.shape, "and inputs shape", inputs.shape, ".")
+            causal_mask = nn.make_causal_mask(
+                jnp.ones((inputs.shape[0], inputs.shape[1])),
+                dtype="bool"
+            )
         else:
             causal_mask = None
 
@@ -134,7 +135,7 @@ class Encoder1DBlock(nn.Module):
             deterministic=deterministic,
             dropout_rate=self.attention_dropout_rate,
             decode=False,
-            num_heads=self.num_heads)(x, x, causal_mask)
+            num_heads=self.num_heads)(x, x, mask=None)
         x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=deterministic)
         x = x + inputs
 
@@ -164,17 +165,18 @@ class NextStatePrediction(nn.Module):
     
     def setup(self):
         self.state_predictor = MLP((*self.hidden_dims, self.out_dim))
-        self.state_no_context_pred = MLP((*self.hidden_dims, self.out_dim))
+        # self.state_no_context_pred = MLP((*self.hidden_dims, self.out_dim))
         
-    def __call__(self, states, actions, context_emb):
-        pred_next_no_context = self.state_predictor(jnp.concatenate([states, actions], -1))
-        pred_next_context = self.state_no_context_pred(jnp.concatenate([states, actions, context_emb], -1))
-        return pred_next_context, pred_next_no_context
+    def __call__(self, states, actions, dynamics_embedding):
+        # pred_next_no_context = self.state_predictor(jnp.concatenate([states, actions], -1))
+        pred_next_context = self.state_predictor(jnp.concatenate([states, actions, dynamics_embedding], -1))
+        return pred_next_context
 
 class DynamicsTransformer(nn.Module):
     num_layers: int
     num_heads: int
     emb_dim: int
+    output_dim: int
     mlp_dim: int
     dropout_rate: float
     attention_dropout_rate: float
@@ -182,30 +184,23 @@ class DynamicsTransformer(nn.Module):
     context_len: int
     causal: bool = False
 
+    
     @nn.compact
-    def __call__(self, states, actions, next_states, valid_transition = None, train=False, return_embedding=True):
+    def __call__(self, states, actions, next_states, valid_transition=None, train=False, return_embedding=True):
         B, T, _ = states.shape
         
         # 1. Embed Individual Components
-        state_emb = nn.Dense(self.emb_dim, name='state_embed')(states)
-        action_emb = nn.Embed(self.action_dim, self.emb_dim, name='action_embed')(actions.squeeze(-1))
-        next_state_emb = nn.Dense(self.emb_dim, name='next_state_embed')(next_states)
-        if valid_transition is not None:
-            valid_transition = nn.Embed(2, self.emb_dim, name='transition_embed')(valid_transition.squeeze(-1))
-            transitions = jnp.concatenate([
-                state_emb,
-                action_emb,
-                next_state_emb,
-                valid_transition
-            ], axis=-1)
-        else:
-            # 2. Create Transition Tokens
-            transitions = jnp.concatenate([
-                state_emb,
-                action_emb,
-                next_state_emb,
-            ], axis=-1)
+        # state_emb = nn.Dense(self.emb_dim, name='state_embed')(states)
+        # action_emb = nn.Embed(self.action_dim, self.emb_dim, name='action_embed')(actions.squeeze(-1))
+        # next_state_emb = nn.Dense(self.emb_dim, name='next_state_embed')(next_states)
         
+        # Testing
+        state_emb = states
+        action_emb = actions
+        next_states_emb = next_states
+        transitions = jnp.concatenate([state_emb, action_emb, next_states_emb], axis=-1)
+        transition_emb = nn.Dense(self.emb_dim, name='token_embedding')(transitions)
+    
         # # 3. Add Positional Encoding
         # transitions = AddPositionEmbs(
         #     context_len=self.context_len,
@@ -215,15 +210,15 @@ class DynamicsTransformer(nn.Module):
 
         # 4. Transformer Processing
         for _ in range(self.num_layers):
-            transitions = Encoder1DBlock(
+            transition_emb = Encoder1DBlock(
                 mlp_dim=self.mlp_dim,
                 num_heads=self.num_heads,
                 dropout_rate=self.dropout_rate,
                 attention_dropout_rate=self.attention_dropout_rate,
                 causal=self.causal
-            )(transitions, deterministic=not train)
-        
-        context_embedding = transitions.mean(1)
+            )(transition_emb, deterministic=not train)
+          
+        context_embedding = nn.Dense(self.emb_dim)(transition_emb.mean(1))
         return context_embedding
         # return context_embedding, transitions
         # emb_mean = nn.Dense(self.emb_dim)(context_embedding)

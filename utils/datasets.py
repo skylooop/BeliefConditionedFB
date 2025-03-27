@@ -264,13 +264,15 @@ class GCDataset:
         
         # for dynamics-aware
         if layout_type is not None:
-            idxs = filtered_dataset.get_random_idxs(context_length * batch_size)
-            context_batch = filtered_dataset.sample(context_length * batch_size, idxs)
-            context_batch = jax.tree.map(lambda x: x.reshape(batch_size, context_length, -1), context_batch)
+            context_batch = self.sample_traj_random(batch_size, context_length, 1, 1)
+            context_batch2 = self.sample_traj_random(batch_size, context_length, 1, 1)
+            # idxs = filtered_dataset.get_random_idxs(context_length * batch_size)
+            # context_batch = filtered_dataset.sample(context_length * batch_size, idxs)
+            # context_batch = jax.tree.map(lambda x: x.reshape(batch_size, context_length, -1), context_batch)
             
-            idxs2 = filtered_dataset.get_random_idxs(context_length * batch_size)
-            context_batch2 = filtered_dataset.sample(context_length * batch_size, idxs2)
-            context_batch2 = jax.tree.map(lambda x: x.reshape(batch_size, context_length, -1), context_batch2)
+            # idxs2 = filtered_dataset.get_random_idxs(context_length * batch_size)
+            # context_batch2 = filtered_dataset.sample(context_length * batch_size, idxs2)
+            # context_batch2 = jax.tree.map(lambda x: x.reshape(batch_size, context_length, -1), context_batch2)
             
             return batch, context_batch, context_batch2
         return batch
@@ -337,9 +339,14 @@ class GCDataset:
         indx_expand = np.repeat(indx, num_traj_states-1)
         traj_indx = self.sample_goals(indx_expand, p_trajgoal=1.0, p_curgoal=0.0, geom_sample=True, p_randomgoal=0.0)
         traj_indx = traj_indx.reshape(batch_size, num_traj_states-1) # (batch_size, num_traj_states)
+        
         batch['traj_states'] = jax.tree_map(lambda arr: arr[traj_indx], self.dataset['observations'])
+        batch['traj_actions'] = jax.tree_map(lambda arr: arr[traj_indx], self.dataset['actions'])
+        
         batch['traj_states'] = np.concatenate([batch['observations'][:,None,:], batch['traj_states']], axis=1)
-
+        batch['traj_actions'] = np.concatenate([batch['actions'][:, None], batch['traj_actions']], axis=1)[..., None]
+        batch['traj_next_states'] = np.concatenate([batch['traj_states'][:, 1:, :], batch['traj_states'][:, -1, :][:, None]], axis=1)
+        
         rand_indx = np.random.randint(self.dataset.size-1, size=batch_size * num_random_states)
         rand_indx = rand_indx.reshape(batch_size, num_random_states)
         batch['random_states'] = jax.tree_map(lambda arr: arr[rand_indx], self.dataset['observations'])

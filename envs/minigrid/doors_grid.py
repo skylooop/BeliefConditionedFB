@@ -185,7 +185,7 @@ class MinigridWrapper:
         for x in range(w - 1):
             plt.plot([x + 0.5, x + 0.5], [-0.5, h - 0.5], **grid_kwargs)
         return ax
-        
+    
 # env = DynamicsGeneralization(render_mode="rgb_array", highlight=False, max_steps=200)
 # # env._gen_grid = partial(env._gen_grid, layout_type=1)
 # env = MinigridWrapper(env)

@@ -24,7 +24,7 @@ agent:
   alpha: 0.003
   discrete: True
   use_film: False
-  number_of_meta_envs: 128 # Only for debug on different dynamics
+  number_of_meta_envs: 2 # Only for debug on different dynamics
   # Transformer
   use_context: False
 
