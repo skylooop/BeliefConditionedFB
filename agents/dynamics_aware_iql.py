@@ -190,20 +190,20 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         actor_loss = 0.0
         
         # # if not train_context_embedding:
-        # value_loss, value_info = self.value_loss(batch, grad_params, train_context_embedding=True, batch_context=batch_context)
-        # for k, v in value_info.items():
-        #     info[f'value/{k}'] = v
+        value_loss, value_info = self.value_loss(batch, grad_params, train_context_embedding=True, batch_context=batch_context)
+        for k, v in value_info.items():
+            info[f'value/{k}'] = v
 
-        # critic_loss, critic_info = self.critic_loss(batch, grad_params, train_context_embedding=True, batch_context=batch_context)
-        # for k, v in critic_info.items():
-        #     info[f'critic/{k}'] = v
+        critic_loss, critic_info = self.critic_loss(batch, grad_params, train_context_embedding=True, batch_context=batch_context)
+        for k, v in critic_info.items():
+            info[f'critic/{k}'] = v
 
-        # rng, actor_rng = jax.random.split(rng)
-        # actor_loss, actor_info = self.actor_loss(batch, grad_params, train_context_embedding=False, rng=actor_rng, batch_context=batch_context)
-        # for k, v in actor_info.items():
-        #     info[f'actor/{k}'] = v
+        rng, actor_rng = jax.random.split(rng)
+        actor_loss, actor_info = self.actor_loss(batch, grad_params, train_context_embedding=False, rng=actor_rng, batch_context=batch_context)
+        for k, v in actor_info.items():
+            info[f'actor/{k}'] = v
 
-        # trans_loss = 0.0
+        trans_loss = 0.0
         if train_context_embedding:
             #trans_loss, trans_info = self.focal_representation_loss(batch, grad_params, batch_context=batch_context, negative_context=negative_context)
             trans_loss, trans_info = self.context_encoder_loss(batch, grad_params, batch_context)
@@ -334,9 +334,9 @@ class GCIQLAgent(flax.struct.PyTreeNode):
             dynamics_embedding = jnp.zeros((1, config['emb_dim']))
             mdp_layout_one_hot = None
         network_info = dict(
-            value=(value_def, (ex_observations, ex_goals, None, mdp_layout_one_hot) if not config['use_context'] else (ex_observations, ex_goals, dynamics_embedding, None)),
+            value=(value_def, (ex_observations, ex_goals, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, dynamics_embedding, None)),
             critic=(critic_def, (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding)),
-            target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding)),
+            target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding)),
             actor=(actor_def, (ex_observations, ex_goals, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, None, dynamics_embedding)),
         )
         

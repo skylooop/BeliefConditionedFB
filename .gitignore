@@ -70,7 +70,7 @@ instance/
 
 # Scrapy stuff:
 .scrapy
-
+*.npz
 # Sphinx documentation
 docs/_build/
 

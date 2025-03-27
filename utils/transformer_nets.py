@@ -176,7 +176,7 @@ class DynamicsTransformer(nn.Module):
     num_layers: int
     num_heads: int
     emb_dim: int
-    output_dim: int
+    out_dim: int
     mlp_dim: int
     dropout_rate: float
     attention_dropout_rate: float
@@ -218,7 +218,7 @@ class DynamicsTransformer(nn.Module):
                 causal=self.causal
             )(transition_emb, deterministic=not train)
           
-        context_embedding = nn.Dense(self.emb_dim)(transition_emb.mean(1))
+        context_embedding = nn.Dense(self.out_dim)(transition_emb.mean(1))
         return context_embedding
         # return context_embedding, transitions
         # emb_mean = nn.Dense(self.emb_dim)(context_embedding)
