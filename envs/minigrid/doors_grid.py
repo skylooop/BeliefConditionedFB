@@ -87,11 +87,13 @@ class DynamicsGeneralization_Doors(MiniGridEnv):
 
         self.mission = "grand mission"
 
-class MinigridWrapper:
+class MinigridWrapper(gym.Env):
     def __init__(self, env):
         self.env = SymbolicObsWrapper(env)
         self.env.unwrapped.actions = DiscreteActions
         self.env.unwrapped.action_space = spaces.Discrete(len(self.env.unwrapped.actions))
+        self.observation_space = spaces.Box(low=0, high=max(self.env.unwrapped.width, self.env.unwrapped.height), shape=(2, ))
+        self.action_space = self.env.unwrapped.action_space
         
     def step(self, action):
         self.coverage_map[self.env.unwrapped.agent_pos[1], self.env.unwrapped.agent_pos[0]] += 1
@@ -138,14 +140,14 @@ class MinigridWrapper:
             truncated = True
 
         # Generate the observation and return the result
-        obs = self.env.unwrapped.gen_obs()
-        return self.env.observation(obs), reward, terminated, truncated, {"goal_pos": self.env.unwrapped.goal_pos}
+        # obs = self.env.unwrapped.gen_obs()
+        return new_pos, reward, terminated, truncated, {"goal_pos": self.env.unwrapped.goal_pos}
       
-    def reset(self):
+    def reset(self, seed = None):
         self.coverage_map = np.zeros(shape=(self.env.unwrapped.width, self.env.unwrapped.height))
-        obs, info = self.env.reset()
+        obs, info = self.env.reset(seed=seed)
         info['goal_pos'] = self.env.unwrapped.goal_pos
-        return obs, info
+        return self.env.unwrapped.agent_pos, info
     
     def render(self):
         return self.env.render()

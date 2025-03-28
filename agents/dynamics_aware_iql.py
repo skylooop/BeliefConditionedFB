@@ -190,18 +190,18 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         actor_loss = 0.0
         
         # # if not train_context_embedding:
-        value_loss, value_info = self.value_loss(batch, grad_params, train_context_embedding=True, batch_context=batch_context)
-        for k, v in value_info.items():
-            info[f'value/{k}'] = v
+        # value_loss, value_info = self.value_loss(batch, grad_params, train_context_embedding=True, batch_context=batch_context)
+        # for k, v in value_info.items():
+        #     info[f'value/{k}'] = v
 
-        critic_loss, critic_info = self.critic_loss(batch, grad_params, train_context_embedding=True, batch_context=batch_context)
-        for k, v in critic_info.items():
-            info[f'critic/{k}'] = v
+        # critic_loss, critic_info = self.critic_loss(batch, grad_params, train_context_embedding=True, batch_context=batch_context)
+        # for k, v in critic_info.items():
+        #     info[f'critic/{k}'] = v
 
-        rng, actor_rng = jax.random.split(rng)
-        actor_loss, actor_info = self.actor_loss(batch, grad_params, train_context_embedding=False, rng=actor_rng, batch_context=batch_context)
-        for k, v in actor_info.items():
-            info[f'actor/{k}'] = v
+        # rng, actor_rng = jax.random.split(rng)
+        # actor_loss, actor_info = self.actor_loss(batch, grad_params, train_context_embedding=False, rng=actor_rng, batch_context=batch_context)
+        # for k, v in actor_info.items():
+        #     info[f'actor/{k}'] = v
 
         trans_loss = 0.0
         if train_context_embedding:
@@ -331,12 +331,12 @@ class GCIQLAgent(flax.struct.PyTreeNode):
             
         mdp_layout_one_hot = jnp.zeros((1, config['number_of_meta_envs']))
         if config['use_context']:
-            dynamics_embedding = jnp.zeros((1, config['emb_dim']))
+            dynamics_embedding = jnp.zeros((1, config['output_dim']))
             mdp_layout_one_hot = None
         network_info = dict(
-            value=(value_def, (ex_observations, ex_goals, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, dynamics_embedding, None)),
-            critic=(critic_def, (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding)),
-            target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding)),
+            value=(value_def, (ex_observations, ex_goals, None, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, None, None, dynamics_embedding)),
+            critic=(critic_def, (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, None, dynamics_embedding)),
+            target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding, None)),
             actor=(actor_def, (ex_observations, ex_goals, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, None, dynamics_embedding)),
         )
         
@@ -349,21 +349,21 @@ class GCIQLAgent(flax.struct.PyTreeNode):
             dynamics_def = DynamicsTransformer(
                 num_layers=config['n_blocks'],
                 num_heads=config['n_heads'],
-                output_dim=config['output_dim'],
+                out_dim=config['output_dim'],
                 action_dim=action_dim,
                 causal=False,
                 emb_dim=config['emb_dim'],
-                mlp_dim=512,
+                mlp_dim=128,
                 dropout_rate=0.0,
                 attention_dropout_rate=0.0,
                 context_len=config['context_len']
             )
             network_info.update(
                 dynamic_transformer=(dynamics_def, (ex_observations[None], jnp.atleast_3d(ex_actions),
-                                                    ex_observations[None], jnp.zeros((1, 1, 1), dtype=jnp.uint8), True, True))
+                                                    ex_observations[None], None, True, True))
             )
             network_info.update(
-                next_state_pred=(next_state_pred_def, (ex_observations, ex_actions[None], jnp.zeros((1, config['emb_dim']))))
+                next_state_pred=(next_state_pred_def, (ex_observations, ex_actions[None], jnp.zeros((1, config['output_dim']))))
             )
             
         networks = {k: v[0] for k, v in network_info.items()}

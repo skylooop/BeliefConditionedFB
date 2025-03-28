@@ -65,6 +65,54 @@ def random_exploration(env, num_episodes: int, layout_type: int, num_mdp: int):
     dataset['layout_type'] = np.tile(one_hot(np.array(layout_type), num_mdp), reps=(dataset['actions'].shape[0], 1)) #np.repeat(np.array(layout_type), repeats=(dataset['actions'].shape[0], ))
     return dataset, env
 
+def trained_policy(agent, env, num_episodes, layout_type, num_mdp):
+    dataset = dict()
+    observations = []
+    actions = []
+    dones = []
+    valid_transitions = []
+    
+    for _ in range(num_episodes):
+        env.reset()
+        cur_observations = []
+        cur_actions = []
+        cur_dones = []
+        transition_possible = []
+        done = False
+        while not done:
+            prev_state = env.env.unwrapped.agent_pos
+            cur_observations.append(np.array(prev_state, dtype=np.float32))
+            action, _ = agent.predict(prev_state, deterministic=True)
+            next_obs, reward, terminated, truncated, info = env.step(action)
+            if env.env.unwrapped.agent_pos == prev_state:
+                transition_possible.append(np.array(0, dtype=np.uint8))
+            else:
+                transition_possible.append(np.array(1, dtype=np.uint8))
+            cur_actions.append(np.array(action, dtype=np.float32))
+            done = truncated or terminated
+            cur_dones.append(np.array(done, dtype=np.float32))
+            
+        observations.append(np.stack(cur_observations))
+        actions.append(np.stack(cur_actions))
+        dones.append(np.stack(cur_dones))
+        valid_transitions.append(np.stack(transition_possible))
+        
+    dataset['observations'] = np.concatenate(observations)
+    dataset['terminals'] = np.concatenate(dones)
+    dataset['actions'] = np.concatenate(actions)
+    dataset['valid_transitions'] = np.concatenate(valid_transitions)
+    
+    ob_mask = (1.0 - dataset['terminals']).astype(bool)
+    next_ob_mask = np.concatenate([[False], ob_mask[:-1]])
+    dataset['next_observations'] = dataset['observations'][next_ob_mask]
+    dataset['observations'] = dataset['observations'][ob_mask]
+    dataset['actions'] = dataset['actions'][ob_mask].astype(np.int8)
+    dataset['valid_transitions'] = dataset['valid_transitions'][ob_mask].astype(np.uint8)
+    new_terminals = np.concatenate([dataset['terminals'][1:], [1.0]])
+    dataset['terminals'] = new_terminals[ob_mask].astype(np.float32)
+    dataset['layout_type'] = np.tile(one_hot(np.array(layout_type), num_mdp), reps=(dataset['actions'].shape[0], 1)) #np.repeat(np.array(layout_type), repeats=(dataset['actions'].shape[0], ))
+    return dataset, env
+
 def q_learning(env, num_episodes: int, layout_type: int, alpha=0.1, gamma=0.99, epsilon=0.5):
     Q = np.zeros((env.env.unwrapped.width, env.env.unwrapped.height, env.env.unwrapped.action_space.n))
     dataset = dict()

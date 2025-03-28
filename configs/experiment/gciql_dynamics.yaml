@@ -29,10 +29,10 @@ agent:
   # Transformer
   use_context: True
   warmup_steps: 50000
-  n_blocks: 3
+  n_blocks: 2
   n_heads: 2
   emb_dim: 64
-  output_dim: 2 # used for linear on top of embedding
+  output_dim: 8 # used for linear on top of embedding
   context_len: 128
   number_of_meta_envs: 2
   use_masked_attention: False
