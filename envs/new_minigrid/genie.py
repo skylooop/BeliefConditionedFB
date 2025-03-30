@@ -76,6 +76,7 @@ class GenieEnv(MiniGridEnv):
         self,
         name,
         size=8,
+        seed=1337,
         agent_start_pos=(3,2),
         agent_start_dir=0,
         agent_start_random=True,
@@ -98,7 +99,8 @@ class GenieEnv(MiniGridEnv):
             grid_size=size,
             max_steps=100,
             # Set this to True for maximum speed
-            see_through_walls=True
+            see_through_walls=True,
+            seed=seed
         )
 
     def make_genie(self, goal_box_idx):

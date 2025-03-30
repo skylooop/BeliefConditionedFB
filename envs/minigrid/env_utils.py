@@ -11,11 +11,63 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib import gridspec as gridspec
+from collections import defaultdict
+from utils.evaluation import flatten, add_to
+from tqdm.auto import tqdm
+
 
 plt.style.use(['seaborn-v0_8-colorblind'])
 
 def one_hot(a, num_classes):
   return np.squeeze(np.eye(num_classes)[a.reshape(-1)])
+
+def convert_trajs_to_dict(trajs, pad_value=-1.0):
+    """Convert list of trajectory dicts to a single dict with stacked arrays.
+    
+    Args:
+        trajs: List of dictionaries, each containing trajectory data.
+        pad_value: Value to use for padding shorter trajectories.
+        
+    Returns:
+        Dictionary with stacked arrays of shape (num_trajectories, max_traj_length, dim).
+    """
+    if not trajs:
+        return {}
+    
+    # Determine maximum trajectory length
+    max_length = max(len(traj['observations']) for traj in trajs)
+    
+    # Initialize output dictionary
+    result = defaultdict(list)
+    
+    # Get all field names from the first trajectory
+    field_names = trajs[0].keys()
+    
+    for traj in trajs:
+        traj_length = len(traj['observations'])
+        pad_length = max_length - traj_length
+        
+        for field in field_names:
+            # Get the array for this field
+            arr = np.array(traj[field])
+            
+            # Pad if necessary
+            if pad_length > 0:
+                if arr.ndim == 1:
+                    # For 1D arrays (like rewards, done)
+                    arr = np.pad(arr, (0, pad_length), constant_values=pad_value)
+                else:
+                    # For multi-dimensional arrays (like observations, actions)
+                    pad_width = [(0, pad_length)] + [(0, 0)] * (arr.ndim - 1)
+                    arr = np.pad(arr, pad_width, constant_values=pad_value)
+            
+            result[field].append(arr)
+    
+    # Stack all trajectories for each field
+    for field in result:
+        result[field] = np.stack(result[field])
+    
+    return dict(result)
 
 def random_exploration(env, num_episodes: int, layout_type: int, num_mdp: int):
     dataset = dict()
@@ -161,6 +213,44 @@ def q_learning(env, num_episodes: int, layout_type: int, alpha=0.1, gamma=0.99, 
     dataset['terminals'] = new_terminals[ob_mask].astype(np.float32)
     dataset['layout_type'] = np.repeat(np.array(layout_type), repeats=(dataset['actions'].shape[0], ))
     return dataset, env
+
+def collect_belief_env(env, num_episodes):
+    max_episode_length = env.max_steps
+    trajs = []
+
+    for i in tqdm(range(num_episodes)):
+        traj = defaultdict(list)
+
+        observation, info = env.reset()
+        done = False
+        step = 0
+        state = env.get_state()
+        item_location = env.item_location
+        
+        while not done and step <= max_episode_length:
+            action = env.action_space.sample()
+            cur_state = state
+            action = np.array(action)
+
+            next_observation, reward, done, info = env.step(action)
+            step += 1
+    
+            transition = dict(
+                observations=observation['image'].reshape(-1),
+                next_observations=next_observation['image'].reshape(-1),
+                item_location=item_location,
+                state=cur_state['image'].reshape(-1),
+                actions=action[None],
+                reward=reward,
+                done=done,
+            )
+            state = env.get_state()
+            observation = next_observation
+            add_to(traj, transition)
+            
+        if i <= num_episodes:
+            trajs.append(traj)
+    return trajs
 
 def get_canvas_image(canvas):
     canvas.draw() 
