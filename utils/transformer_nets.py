@@ -3,6 +3,7 @@ from typing import Any, Callable, Optional, Tuple, Type
 import flax.linen as nn
 import jax.numpy as jnp
 from typing import *
+import distrax
 
 Array = Any
 PRNGKey = Any
@@ -172,6 +173,18 @@ class NextStatePrediction(nn.Module):
         pred_next_context = self.state_predictor(jnp.concatenate([states, actions, dynamics_embedding], -1))
         return pred_next_context
 
+class LinearProbing(nn.Module):
+    hidden_dims: Sequence[int]
+    out_dim: int
+    
+    def setup(self):
+        self.state_predictor = MLP((*self.hidden_dims, self.out_dim))
+        
+    def __call__(self, dynamics_embedding):
+        logits = self.state_predictor(dynamics_embedding)
+        # distribution = distrax.Categorical(logits=logits / jnp.maximum(1e-6, 0.0))
+        return logits
+
 class DynamicsTransformer(nn.Module):
     num_layers: int
     num_heads: int
@@ -189,12 +202,6 @@ class DynamicsTransformer(nn.Module):
     def __call__(self, states, actions, next_states, valid_transition=None, train=False, return_embedding=True):
         B, T, _ = states.shape
         
-        # 1. Embed Individual Components
-        # state_emb = nn.Dense(self.emb_dim, name='state_embed')(states)
-        # action_emb = nn.Embed(self.action_dim, self.emb_dim, name='action_embed')(actions.squeeze(-1))
-        # next_state_emb = nn.Dense(self.emb_dim, name='next_state_embed')(next_states)
-        
-        # Testing
         state_emb = states
         action_emb = actions
         next_states_emb = next_states
@@ -217,11 +224,8 @@ class DynamicsTransformer(nn.Module):
                 attention_dropout_rate=self.attention_dropout_rate,
                 causal=self.causal
             )(transition_emb, deterministic=not train)
-          
-        context_embedding = nn.Dense(self.out_dim)(transition_emb.mean(1))
-        return context_embedding
-        # return context_embedding, transitions
-        # emb_mean = nn.Dense(self.emb_dim)(context_embedding)
-        # emb_log_std = nn.Dense(self.emb_dim)(context_embedding)
         
-        # return emb_mean, emb_log_std
+        seq_emb = transition_emb.mean(1)
+        context_embedding_mean = nn.Dense(self.out_dim)(seq_emb)
+        context_embedding_log_std = nn.Dense(self.out_dim)(seq_emb)
+        return context_embedding_mean, context_embedding_log_std

@@ -508,7 +508,91 @@ class FBActor(nn.Module):
             distribution = TransformedWithMode(distribution, distrax.Block(distrax.Tanh(), ndims=1))
 
         return distribution
+    
+    
+import flax.linen as nn
+import jax.numpy as jnp
+import distrax
 
+class RecurrentActor(nn.Module):
+    hidden_dim: int
+    action_dim: int
+    rnn_type: str = 'lstm'
+    layer_norm: bool = False
+    tanh_squash: bool = True
+    state_dependent_std: bool = True
+
+    @nn.compact
+    def __call__(self, inputs, hidden_state):
+        if self.rnn_type == 'lstm':
+            lstm = nn.LSTMCell(self.hidden_dim)
+            carry, outputs = nn.scan(
+                nn.LSTMCell.call,
+                variable_broadcast="params",
+                split_rngs={"params": False}
+            )(lstm, hidden_state, inputs)
+        elif self.rnn_type == 'gru':
+            gru = nn.GRUCell(self.hidden_dim)
+            carry, outputs = nn.scan(
+                nn.GRUCell.call,
+                variable_broadcast="params",
+                split_rngs={"params": False}
+            )(gru, hidden_state, inputs)
+        else:
+            raise ValueError(f"Unsupported RNN type: {self.rnn_type}")
+
+        if self.layer_norm:
+            outputs = nn.LayerNorm()(outputs)
+
+        mean = nn.Dense(self.action_dim, kernel_init=nn.initializers.xavier_uniform())(outputs)
+        if self.state_dependent_std:
+            log_std = nn.Dense(self.action_dim, kernel_init=nn.initializers.xavier_uniform())(outputs)
+        else:
+            log_std = self.param('log_std', nn.initializers.zeros, (self.action_dim,))
+
+        log_std = jnp.clip(log_std, -20, 2)
+        std = jnp.exp(log_std)
+
+        if self.tanh_squash:
+            distribution = distrax.Transformed(
+                distrax.MultivariateNormalDiag(mean, std),
+                distrax.Block(distrax.Tanh(), 1)
+            )
+        else:
+            distribution = distrax.MultivariateNormalDiag(mean, std)
+
+        return distribution, carry
+
+class RecurrentValue(nn.Module):
+    hidden_dim: int
+    rnn_type: str = 'lstm'
+    layer_norm: bool = False
+
+    @nn.compact
+    def __call__(self, inputs, hidden_state):
+        if self.rnn_type == 'lstm':
+            lstm = nn.LSTMCell(self.hidden_dim)
+            carry, outputs = nn.scan(
+                nn.LSTMCell.call,
+                variable_broadcast="params",
+                split_rngs={"params": False}
+            )(lstm, hidden_state, inputs)
+        elif self.rnn_type == 'gru':
+            gru = nn.GRUCell(self.hidden_dim)
+            carry, outputs = nn.scan(
+                nn.GRUCell.call,
+                variable_broadcast="params",
+                split_rngs={"params": False}
+            )(gru, hidden_state, inputs)
+        else:
+            raise ValueError(f"Unsupported RNN type: {self.rnn_type}")
+
+        if self.layer_norm:
+            outputs = nn.LayerNorm()(outputs)
+
+        value = nn.Dense(1, kernel_init=nn.initializers.xavier_uniform())(outputs)
+        return value.squeeze(-1), carry    
+    
 class GCValue(nn.Module):
     """Goal-conditioned value/critic function.
 
