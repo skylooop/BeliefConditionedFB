@@ -205,7 +205,7 @@ class GCDataset:
     def filter_by_layout(self, layout_label):
         """Filter the dataset to only include transitions from the specified layout."""
         # Get indices corresponding to the specified layout
-        layout_mask = self.dataset['layout_type'] == layout_label
+        layout_mask = jnp.all(self.dataset['layout_type'] == jax.nn.one_hot(jnp.array([layout_label]), self.config['number_of_meta_envs']), axis=-1)
         filtered_idxs = np.nonzero(layout_mask)[0]
 
         # Create a new dataset containing only the filtered indices
