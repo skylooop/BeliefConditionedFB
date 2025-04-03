@@ -14,10 +14,10 @@ import gymnasium as gym
 from minigrid.wrappers import SymbolicObsWrapper
 
 class DiscreteActions(IntEnum):
-    move_left = 0
-    move_right = 1
-    move_up = 2
-    move_down = 3
+    move_left = 2
+    move_right = 3
+    move_up = 0
+    move_down = 1
 
 class DynamicsGeneralization_Doors(MiniGridEnv):
     def __init__(
@@ -28,14 +28,11 @@ class DynamicsGeneralization_Doors(MiniGridEnv):
         max_steps: int | None = None,
         **kwargs,
     ):
+        # Current (hidden) state, which generated 
         self.agent_start_pos = agent_start_pos
         self.agent_start_dir = agent_start_dir
 
         mission_space = MissionSpace(mission_func=self._gen_mission)
-
-        if max_steps is None:
-            max_steps = 4 * size**2
-
         super().__init__(
             mission_space=mission_space,
             grid_size=size,
@@ -92,7 +89,7 @@ class MinigridWrapper(gym.Env):
         self.env = SymbolicObsWrapper(env)
         self.env.unwrapped.actions = DiscreteActions
         self.env.unwrapped.action_space = spaces.Discrete(len(self.env.unwrapped.actions))
-        self.observation_space = spaces.Box(low=0, high=max(self.env.unwrapped.width, self.env.unwrapped.height), shape=(2, ))
+        self.observation_space = spaces.MultiDiscrete(nvec=[self.env.unwrapped.width, self.env.unwrapped.height]).sample()
         self.action_space = self.env.unwrapped.action_space
         
     def step(self, action):
@@ -108,13 +105,13 @@ class MinigridWrapper(gym.Env):
 
         # Calculate the new position based on the action
         if action == self.env.unwrapped.actions.move_left:
-            new_pos = current_pos + np.array([-1, 0])
-        elif action == self.env.unwrapped.actions.move_right:
-            new_pos = current_pos + np.array([1, 0])
-        elif action == self.env.unwrapped.actions.move_up:
             new_pos = current_pos + np.array([0, -1])
-        elif action == self.env.unwrapped.actions.move_down:
+        elif action == self.env.unwrapped.actions.move_right:
             new_pos = current_pos + np.array([0, 1])
+        elif action == self.env.unwrapped.actions.move_up:
+            new_pos = current_pos + np.array([-1, 0])
+        elif action == self.env.unwrapped.actions.move_down:
+            new_pos = current_pos + np.array([1, 0])
         else:
             raise ValueError(f"Invalid action: {action}")
 
@@ -127,7 +124,8 @@ class MinigridWrapper(gym.Env):
         # Move the agent if the new cell is walkable
         if new_cell is None or new_cell.can_overlap():
             self.env.unwrapped.agent_pos = tuple(new_pos)
-
+        else:
+            new_pos = current_pos
         # Check if the new cell is a goal or lava
         if new_cell is not None and new_cell.type == "goal":
             terminated = True

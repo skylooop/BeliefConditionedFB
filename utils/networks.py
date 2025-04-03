@@ -9,6 +9,7 @@ import jax.numpy as jnp
 from typing import Any, Optional, Sequence, Callable
 from flax.linen.initializers import lecun_normal, zeros
 from jaxtyping import Array, Float
+from flax.linen.initializers import orthogonal, constant
 
 def default_init(scale=1.0):
     """Default kernel initializer."""
@@ -524,6 +525,11 @@ class RecurrentActor(nn.Module):
 
     @nn.compact
     def __call__(self, inputs, hidden_state):
+        embedding = nn.Dense(
+            128, kernel_init=orthogonal(jnp.sqrt(2)), bias_init=constant(0.0)
+        )(inputs)
+        embedding = jax.nn.relu(embedding)
+        
         if self.rnn_type == 'lstm':
             lstm = nn.LSTMCell(self.hidden_dim)
             carry, outputs = nn.scan(

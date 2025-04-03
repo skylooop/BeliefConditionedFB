@@ -121,10 +121,10 @@ class RecurrentPPO(flax.struct.PyTreeNode):
             layer_norm=config['layer_norm']
         )
 
-        network_info = {
-            'actor': (actor_def, (ex_observations, initial_hidden_actor)),
-            'value': (value_def, (ex_observations, initial_hidden_value)),
-        }
+        network_info = dict(
+            actor=(actor_def, (ex_observations, initial_hidden_actor)),
+            value=(value_def, (ex_observations, initial_hidden_value)),
+        )
 
         networks = {k: v[0] for k, v in network_info.items()}
         network_args = {k: v[1] for k, v in network_info.items()}

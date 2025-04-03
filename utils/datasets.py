@@ -264,16 +264,8 @@ class GCDataset:
         
         # for dynamics-aware
         if layout_type is not None:
-            context_batch = self.sample_traj_random(batch_size, context_length, 1, 1)
-            context_batch2 = self.sample_traj_random(batch_size, context_length, 1, 1)
-            # idxs = filtered_dataset.get_random_idxs(context_length * batch_size)
-            # context_batch = filtered_dataset.sample(context_length * batch_size, idxs)
-            # context_batch = jax.tree.map(lambda x: x.reshape(batch_size, context_length, -1), context_batch)
-            
-            # idxs2 = filtered_dataset.get_random_idxs(context_length * batch_size)
-            # context_batch2 = filtered_dataset.sample(context_length * batch_size, idxs2)
-            # context_batch2 = jax.tree.map(lambda x: x.reshape(batch_size, context_length, -1), context_batch2)
-            
+            context_batch = self.sample_traj_random(batch_size, context_length)
+            context_batch2 = self.sample_traj_random(batch_size, context_length)
             return batch, context_batch, context_batch2
         return batch
 
@@ -333,27 +325,48 @@ class GCDataset:
             rets.append(jax.tree_util.tree_map(lambda arr: arr[cur_idxs], self.dataset['observations']))
         return jax.tree_util.tree_map(lambda *args: np.concatenate(args, axis=-1), *rets)
 
-    def sample_traj_random(self, batch_size, num_traj_states, num_random_states, num_random_states_decode):
-        indx = np.random.randint(self.dataset.size-1, size=batch_size)
+    def sample_traj_random(self, batch_size, context_length=99):
+        indx = np.random.randint(self.dataset.size, size=batch_size)
+        final_state_idxs = self.terminal_locs[np.searchsorted(self.terminal_locs, indx)]
+        start_state_idxs = self.initial_locs[np.searchsorted(self.initial_locs, indx, side='right') - 1]
+        
+        # Calculate valid start positions ensuring sequences fit within trajectories
+        max_start = np.maximum(start_state_idxs, final_state_idxs - context_length + 1)
+        start_pos = np.array([
+            np.random.randint(low=start, high=max_start_i + 1) 
+            if max_start_i >= start 
+            else start 
+            for start, max_start_i in zip(start_state_idxs, max_start)
+        ])
+        
+        # Generate indices for sequences
+        traj_indx = start_pos[:, None] + np.arange(context_length)
+        traj_indx = np.minimum(traj_indx, final_state_idxs[:, None])
+        # indx = np.random.randint(self.dataset.size-1, size=batch_size)
         batch = self.dataset.sample(batch_size, indx)
-        indx_expand = np.repeat(indx, num_traj_states-1)
-        traj_indx = self.sample_goals(indx_expand, p_trajgoal=1.0, p_curgoal=0.0, geom_sample=True, p_randomgoal=0.0)
-        traj_indx = traj_indx.reshape(batch_size, num_traj_states-1) # (batch_size, num_traj_states)
+        # #traj_indx = self.sample_goals(indx_expand, p_trajgoal=1.0, p_curgoal=0.0, geom_sample=True, p_randomgoal=0.0)
+        # final_state_idxs = self.terminal_locs[np.searchsorted(self.terminal_locs, indx)] # end of traj
+        # start_state_idxs = self.terminal_locs[np.searchsorted(self.terminal_locs, indx) - 1]# start of traj
+        # print(final_state_idxs.shape)
+        # print(start_state_idxs.shape)
+        # # indx_expand = np.repeat(indx, num_traj_states-1)
+        # traj_indx = np.stack([np.arange(start_state_idxs[i], final_state_idxs[i]) for i in range(len(final_state_idxs))])
+        #traj_indx = traj_indx.reshape(batch_size, num_traj_states-1) # (batch_size, num_traj_states)
         
         batch['traj_states'] = jax.tree_map(lambda arr: arr[traj_indx], self.dataset['observations'])
         batch['traj_actions'] = jax.tree_map(lambda arr: arr[traj_indx], self.dataset['actions'])
+        batch['traj_next_states'] = jax.tree_map(lambda arr: arr[traj_indx], self.dataset['next_observations'])
+        # batch['traj_states'] = np.concatenate([batch['observations'][:,None,:], batch['traj_states']], axis=1)
+        # batch['traj_actions'] = np.concatenate([batch['actions'][:, None], batch['traj_actions']], axis=1)[..., None]
+        # batch['traj_next_states'] = np.concatenate([batch['traj_states'][:, 1:, :], batch['traj_states'][:, -1, :][:, None]], axis=1)
         
-        batch['traj_states'] = np.concatenate([batch['observations'][:,None,:], batch['traj_states']], axis=1)
-        batch['traj_actions'] = np.concatenate([batch['actions'][:, None], batch['traj_actions']], axis=1)[..., None]
-        batch['traj_next_states'] = np.concatenate([batch['traj_states'][:, 1:, :], batch['traj_states'][:, -1, :][:, None]], axis=1)
-        
-        rand_indx = np.random.randint(self.dataset.size-1, size=batch_size * num_random_states)
-        rand_indx = rand_indx.reshape(batch_size, num_random_states)
-        batch['random_states'] = jax.tree_map(lambda arr: arr[rand_indx], self.dataset['observations'])
+        # rand_indx = np.random.randint(self.dataset.size-1, size=batch_size * num_random_states)
+        # rand_indx = rand_indx.reshape(batch_size, num_random_states)
+        # batch['random_states'] = jax.tree_map(lambda arr: arr[rand_indx], self.dataset['observations'])
 
-        rand_indx_decode = np.random.randint(self.dataset.size-1, size=batch_size * num_random_states_decode)
-        rand_indx_decode = rand_indx_decode.reshape(batch_size, num_random_states_decode)
-        batch['random_states_decode'] = jax.tree_map(lambda arr: arr[rand_indx_decode], self.dataset['observations'])
+        # rand_indx_decode = np.random.randint(self.dataset.size-1, size=batch_size * num_random_states_decode)
+        # rand_indx_decode = rand_indx_decode.reshape(batch_size, num_random_states_decode)
+        # batch['random_states_decode'] = jax.tree_map(lambda arr: arr[rand_indx_decode], self.dataset['observations'])
         return batch
     
 

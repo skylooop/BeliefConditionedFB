@@ -41,7 +41,7 @@ class GCIQLAgent(flax.struct.PyTreeNode):
                                                                                 batch_context['next_observations'], batch_context['valid_transitions'], train=False, return_embedding=True)
             stop_grad_dynamics_embedding = jax.lax.stop_gradient(dynamics_embedding) # batch['layout_type']
         q1, q2 = self.network.select('target_critic')(batch['observations'], batch['value_goals'], batch['actions'], batch['layout_type'],
-                                                      stop_grad_dynamics_embedding)
+                                                    stop_grad_dynamics_embedding)
         q = jnp.minimum(q1, q2)
         v = self.network.select('value')(batch['observations'], batch['value_goals'], batch['layout_type'], dynamics_embedding=dynamics_embedding, params=grad_params)
         value_loss = self.expectile_loss(q - v, q - v, self.config['expectile']).mean()
@@ -174,11 +174,12 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         return loss, {"world_pred_loss": loss}
     
     def context_encoder_loss(self, batch, grad_params, batch_context):
-        dynamics_embedding = self.network.select('dynamic_transformer')(batch_context['traj_states'], batch_context['traj_actions'],
-                                                                                batch_context['traj_next_states'], train=True, params=grad_params)
-        dynamics_embedding = jnp.tile(dynamics_embedding[:, None], reps=(1, batch_context['traj_states'].shape[1], 1))
-        next_state_pred = self.network.select('next_state_pred')(batch_context['traj_states'], batch_context['traj_actions'], dynamics_embedding, params=grad_params)
-        loss = optax.squared_error(next_state_pred, batch_context['traj_next_states']).mean()
+        dynamics_embedding_mean, dynamics_embedding_std = self.network.select('dynamic_transformer')(batch['traj_states'], batch['traj_actions'],
+                                                                                batch['traj_next_states'], train=True, params=grad_params)
+        dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=self.rng, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_embedding_std)
+        dynamics_embedding = jnp.tile(dynamics_embedding[:, None], reps=(1, batch['traj_states'].shape[1], 1))
+        next_state_pred = self.network.select('next_state_pred')(batch['traj_states'], batch['traj_actions'], dynamics_embedding, params=grad_params)
+        loss = optax.squared_error(next_state_pred, batch['traj_next_states']).mean()
         return loss, {"context_embedding_loss": loss}
     
     def total_loss(self, batch, grad_params, train_context_embedding, negative_context=None, batch_context=None, rng=None):
@@ -229,10 +230,10 @@ class GCIQLAgent(flax.struct.PyTreeNode):
 
         def loss_fn(grad_params):
             return self.total_loss(batch, grad_params, train_context_embedding=train_context_embedding, batch_context=batch_context,
-                                   negative_context=negative_context,rng=rng)
+                                negative_context=negative_context,rng=rng)
 
         new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn)
-        self.target_update(new_network, 'critic')
+        # self.target_update(new_network, 'critic')
 
         return self.replace(network=new_network, rng=new_rng), info
 
@@ -286,65 +287,63 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         #     encoders['value'] = GCEncoder(concat_encoder=encoder_module())
         #     encoders['critic'] = GCEncoder(concat_encoder=encoder_module())
         #     encoders['actor'] = GCEncoder(concat_encoder=encoder_module())
-
+        network_info = dict()
         # Define value and actor networks.
-        value_def = GCValue(
-            hidden_dims=config['value_hidden_dims'],
-            layer_norm=config['layer_norm'],
-            ensemble=False,
-            gc_encoder=encoders.get('value'),
-            use_film=config['use_film'] if config['use_film'] else False
-        )
+        # value_def = GCValue(
+        #     hidden_dims=config['value_hidden_dims'],
+        #     layer_norm=config['layer_norm'],
+        #     ensemble=False,
+        #     gc_encoder=encoders.get('value'),
+        #     use_film=config['use_film'] if config['use_film'] else False
+        # )
 
-        if config['discrete']:
-            critic_def = GCDiscreteCritic(
-                hidden_dims=config['value_hidden_dims'],
-                layer_norm=config['layer_norm'],
-                ensemble=True,
-                gc_encoder=encoders.get('critic'),
-                action_dim=action_dim,
-                use_film=config['use_film'] if config['use_film'] else False
-            )
-        else:
-            critic_def = GCValue(
-                hidden_dims=config['value_hidden_dims'],
-                layer_norm=config['layer_norm'],
-                ensemble=True,
-                gc_encoder=encoders.get('critic'),
-            )
+        # if config['discrete']:
+        #     critic_def = GCDiscreteCritic(
+        #         hidden_dims=config['value_hidden_dims'],
+        #         layer_norm=config['layer_norm'],
+        #         ensemble=True,
+        #         gc_encoder=encoders.get('critic'),
+        #         action_dim=action_dim,
+        #         use_film=config['use_film'] if config['use_film'] else False
+        #     )
+        # else:
+        #     critic_def = GCValue(
+        #         hidden_dims=config['value_hidden_dims'],
+        #         layer_norm=config['layer_norm'],
+        #         ensemble=True,
+        #         gc_encoder=encoders.get('critic'),
+        #     )
 
-        if config['discrete']:
-            actor_def = GCDiscreteActor(
-                hidden_dims=config['actor_hidden_dims'],
-                action_dim=action_dim,
-                gc_encoder=encoders.get('actor'),
-                use_film=config['use_film'] if config['use_film'] else False
-            )
-        else:
-            actor_def = GCActor(
-                hidden_dims=config['actor_hidden_dims'],
-                action_dim=action_dim,
-                state_dependent_std=False,
-                const_std=config['const_std'],
-                gc_encoder=encoders.get('actor'),
-            )
+        # if config['discrete']:
+        #     actor_def = GCDiscreteActor(
+        #         hidden_dims=config['actor_hidden_dims'],
+        #         action_dim=action_dim,
+        #         gc_encoder=encoders.get('actor'),
+        #         use_film=config['use_film'] if config['use_film'] else False
+        #     )
+        # else:
+        #     actor_def = GCActor(
+        #         hidden_dims=config['actor_hidden_dims'],
+        #         action_dim=action_dim,
+        #         state_dependent_std=False,
+        #         const_std=config['const_std'],
+        #         gc_encoder=encoders.get('actor'),
+        #     )
             
-        mdp_layout_one_hot = jnp.zeros((1, config['number_of_meta_envs']))
-        if config['use_context']:
-            dynamics_embedding = jnp.zeros((1, config['output_dim']))
-            mdp_layout_one_hot = None
-        network_info = dict(
-            value=(value_def, (ex_observations, ex_goals, None, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, None, None, dynamics_embedding)),
-            critic=(critic_def, (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, None, dynamics_embedding)),
-            target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, dynamics_embedding, None)),
-            actor=(actor_def, (ex_observations, ex_goals, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, None, dynamics_embedding)),
-        )
+        # mdp_layout_one_hot = jnp.zeros((1, config['number_of_meta_envs']))
+        # if config['use_context']:
+        #     dynamics_embedding = jnp.zeros((1, config['output_dim']))
+        #     mdp_layout_one_hot = None
+        # network_info = dict(
+        #     value=(value_def, (ex_observations, ex_goals, None, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, None, None, dynamics_embedding)),
+        #     critic=(critic_def, (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, None, dynamics_embedding)),
+        #     target_critic=(copy.deepcopy(critic_def), (ex_observations, ex_goals, ex_actions, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, ex_actions, None, dynamics_embedding)),
+        #     actor=(actor_def, (ex_observations, ex_goals, mdp_layout_one_hot, None) if not config['use_context'] else (ex_observations, ex_goals, None, dynamics_embedding)),
+        # )
         
         if config['use_context']:
-            # Meaning meta-training on different dynamics
-            from utils.transformer_nets import DynamicsTransformer, NextStatePrediction # LayoutClassifier, NextStatePrediction
-            
-            # layout_classifier_def = LayoutClassifier(hidden_dims=(512, 512, 512), num_layouts=config['number_of_meta_envs'])
+            from utils.transformer_nets import DynamicsTransformer, NextStatePrediction
+
             next_state_pred_def = NextStatePrediction(hidden_dims=(128, 128, 128), out_dim=ex_observations.shape[-1])
             dynamics_def = DynamicsTransformer(
                 num_layers=config['n_blocks'],
@@ -359,11 +358,12 @@ class GCIQLAgent(flax.struct.PyTreeNode):
                 context_len=config['context_len']
             )
             network_info.update(
-                dynamic_transformer=(dynamics_def, (ex_observations[None], jnp.atleast_3d(ex_actions),
-                                                    ex_observations[None], None, True, True))
+                dynamic_transformer=(dynamics_def, (jnp.zeros((1, 1, ex_observations.shape[-1])), jnp.zeros((1, 1, ex_actions.shape[-1])),
+                                                    jnp.zeros((1, 1, ex_observations.shape[-1])), True, True))
             )
             network_info.update(
-                next_state_pred=(next_state_pred_def, (ex_observations, ex_actions[None], jnp.zeros((1, config['output_dim']))))
+                next_state_pred=(next_state_pred_def, (jnp.zeros((1, 1, ex_observations.shape[-1])), jnp.zeros((1, 1, ex_actions.shape[-1])),
+                                                    jnp.zeros((1, 1, config['output_dim']))))
             )
             
         networks = {k: v[0] for k, v in network_info.items()}
@@ -377,6 +377,6 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         network = TrainState.create(network_def, network_params, tx=network_tx)
 
         params = network_params
-        params['modules_target_critic'] = params['modules_critic']
+        # params['modules_target_critic'] = params['modules_critic']
 
         return cls(rng, network=network, config=flax.core.FrozenDict(**config))

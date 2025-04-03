@@ -236,5 +236,5 @@ class ModifiedCookieEnv9x9(ModifiedCookieEnv):
 
 register(
     id='MiniGrid-Modified-Cookie-9x9-v0',
-    entry_point='gym_minigrid.cookie_modified:ModifiedCookieEnv9x9'
+    entry_point='envs.new_minigrid.cookie_modified:ModifiedCookieEnv9x9'
 )

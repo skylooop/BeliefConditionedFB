@@ -166,10 +166,8 @@ class NextStatePrediction(nn.Module):
     
     def setup(self):
         self.state_predictor = MLP((*self.hidden_dims, self.out_dim))
-        # self.state_no_context_pred = MLP((*self.hidden_dims, self.out_dim))
         
     def __call__(self, states, actions, dynamics_embedding):
-        # pred_next_no_context = self.state_predictor(jnp.concatenate([states, actions], -1))
         pred_next_context = self.state_predictor(jnp.concatenate([states, actions, dynamics_embedding], -1))
         return pred_next_context
 
@@ -199,23 +197,18 @@ class DynamicsTransformer(nn.Module):
 
     
     @nn.compact
-    def __call__(self, states, actions, next_states, valid_transition=None, train=False, return_embedding=True):
+    def __call__(self, states, actions, next_states, train=False, return_embedding=True):
         B, T, _ = states.shape
+        assert states.ndim == 3
+        assert actions.ndim == 3
+        assert next_states.ndim == 3
+        assert self.emb_dim % 3 == 0
         
-        state_emb = states
-        action_emb = actions
-        next_states_emb = next_states
-        transitions = jnp.concatenate([state_emb, action_emb, next_states_emb], axis=-1)
-        transition_emb = nn.Dense(self.emb_dim, name='token_embedding')(transitions)
+        state_emb = nn.Dense(self.emb_dim // 3)(states)
+        action_emb = nn.Dense(self.emb_dim // 3)(actions)
+        next_states_emb = nn.Dense(self.emb_dim // 3)(next_states)
+        transition_emb = jnp.concatenate([state_emb, action_emb, next_states_emb], axis=-1)
     
-        # # 3. Add Positional Encoding
-        # transitions = AddPositionEmbs(
-        #     context_len=self.context_len,
-        #     posemb_init=nn.initializers.normal(stddev=0.02),
-        #     name='pos_embed'
-        # )(transitions)
-
-        # 4. Transformer Processing
         for _ in range(self.num_layers):
             transition_emb = Encoder1DBlock(
                 mlp_dim=self.mlp_dim,
@@ -225,7 +218,7 @@ class DynamicsTransformer(nn.Module):
                 causal=self.causal
             )(transition_emb, deterministic=not train)
         
-        seq_emb = transition_emb.mean(1)
-        context_embedding_mean = nn.Dense(self.out_dim)(seq_emb)
-        context_embedding_log_std = nn.Dense(self.out_dim)(seq_emb)
+        embedding = transition_emb.mean(1)
+        context_embedding_mean = nn.Dense(self.out_dim)(embedding)
+        context_embedding_log_std = nn.Dense(self.out_dim)(embedding)
         return context_embedding_mean, context_embedding_log_std

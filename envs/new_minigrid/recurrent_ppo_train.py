@@ -246,31 +246,31 @@ def main(_):
         #     save_agent(agent, FLAGS.save_dir, i)
 
         # Reset agent.
-        if FLAGS.reset_interval > 0 and i % FLAGS.reset_interval == 0:
-            new_agent = agent_class.create(
-                FLAGS.seed + i,
-                example_transition['observations'],
-                example_transition['actions'],
-                config,
-            )
-            agent = agent.replace(
-                network=agent.network.replace(params=new_agent.network.params, opt_state=new_agent.network.opt_state)
-            )
-            del new_agent
+        # if FLAGS.reset_interval > 0 and i % FLAGS.reset_interval == 0:
+        #     new_agent = agent_class.create(
+        #         FLAGS.seed + i,
+        #         example_transition['observations'],
+        #         example_transition['actions'],
+        #         config,
+        #     )
+        #     agent = agent.replace(
+        #         network=agent.network.replace(params=new_agent.network.params, opt_state=new_agent.network.opt_state)
+        #     )
+        #     del new_agent
     
-    # collect data
-    eval_info, trajs, cur_renders = evaluate(
-        agent=agent,
-        env=eval_env,
-        config=config,
-        num_eval_episodes=200, # collect 200 trajs
-        num_video_episodes=0,
-        video_frame_skip=0,
-    )
-    dataset = convert_trajs_to_dict(trajs)
+    # collect trained data
+    # eval_info, trajs, cur_renders = evaluate(
+    #     agent=agent,
+    #     env=eval_env,
+    #     config=config,
+    #     num_eval_episodes=200, # collect 200 trajs
+    #     num_video_episodes=0,
+    #     video_frame_skip=0,
+    # )
+    # dataset = convert_trajs_to_dict(trajs)
     
-    for path, data in [(f"/home/m_bobrin/ZeroShotRL/envs/mujoco/data_custom_ant/default_ind_{FLAGS.default_ind}.npz", dataset)]:
-        np.savez_compressed(path, **data)
+    # for path, data in [(f"/home/m_bobrin/ZeroShotRL/envs/mujoco/data_custom_ant/default_ind_{FLAGS.default_ind}.npz", dataset)]:
+    #     np.savez_compressed(path, **data)
     
     train_logger.close()
     eval_logger.close()
