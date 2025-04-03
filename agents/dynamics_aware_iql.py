@@ -34,8 +34,8 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         stop_grad_dynamics_embedding=None
         if self.config['use_context']:
             if train_context_embedding:
-                dynamics_embedding_mean, dynamics_embedding_log_std = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
-                                                                                batch_context['next_observations'], batch_context['valid_transitions'], train=True, return_embedding=True, params=grad_params)
+                dynamics_embedding_mean, dynamics_embedding_log_std = self.network.select('dynamic_transformer')(batch['traj_states'], batch['traj_actions'],
+                                                                                batch['traj_next_states'], train=True, return_embedding=True, params=grad_params)
             else:
                 dynamics_embedding_mean, dynamics_embedding_log_std = self.network.select('dynamic_transformer')(batch['traj_states'], batch['traj_actions'],
                                                                                 batch['traj_next_states'], train=False)
