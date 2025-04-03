@@ -69,6 +69,55 @@ def convert_trajs_to_dict(trajs, pad_value=-1.0):
     
     return dict(result)
 
+def random_exploration_old(env, num_episodes: int, layout_type: int):
+    dataset = dict()
+    observations = []
+    actions = []
+    dones = []
+    valid_transitions = []
+    
+    for _ in range(num_episodes):
+        env.reset()
+        cur_observations = []
+        cur_actions = []
+        cur_dones = []
+        transition_possible = []
+        done = False
+        while not done:
+            prev_state = env.env.unwrapped.agent_pos
+            cur_observations.append(np.array(env.env.unwrapped.agent_pos, dtype=np.float32))
+            #action = np.random.choice(available_actions, replace=True)
+            action = env.env.unwrapped.action_space.sample()
+            next_state, reward, terminated, truncated, info = env.step(action)
+            if env.env.unwrapped.agent_pos == prev_state:
+                transition_possible.append(np.array(0, dtype=np.int8))
+            else:
+                transition_possible.append(np.array(1, dtype=np.int8))
+            cur_actions.append(np.array(action, dtype=np.float32))
+            done = truncated
+            cur_dones.append(np.array(done, dtype=np.float32))
+            
+        observations.append(np.stack(cur_observations))
+        actions.append(np.stack(cur_actions))
+        dones.append(np.stack(cur_dones))
+        valid_transitions.append(np.stack(transition_possible))
+        
+    dataset['observations'] = np.concatenate(observations)
+    dataset['terminals'] = np.concatenate(dones)
+    dataset['actions'] = np.concatenate(actions)
+    dataset['valid_transitions'] = np.concatenate(valid_transitions)
+    
+    ob_mask = (1.0 - dataset['terminals']).astype(bool)
+    next_ob_mask = np.concatenate([[False], ob_mask[:-1]])
+    dataset['next_observations'] = dataset['observations'][next_ob_mask]
+    dataset['observations'] = dataset['observations'][ob_mask]
+    dataset['actions'] = dataset['actions'][ob_mask].astype(np.int8)
+    dataset['valid_transitions'] = dataset['valid_transitions'][ob_mask].astype(np.int8)
+    new_terminals = np.concatenate([dataset['terminals'][1:], [1.0]])
+    dataset['terminals'] = new_terminals[ob_mask].astype(np.float32)
+    # dataset['layout_type'] = np.repeat(np.array(layout_type), repeats=(dataset['actions'].shape[0], ))
+    return dataset, env
+
 def random_exploration(env, num_episodes: int, layout_type: int, num_mdp: int):
     dataset = dict()
     observations = []
@@ -84,13 +133,13 @@ def random_exploration(env, num_episodes: int, layout_type: int, num_mdp: int):
         cur_next_observations = []
         done = False
         step = 0
-        while not done:
+        while not done and step < env.env.unwrapped.max_steps:
             step += 1
             cur_observations.append(np.array(obs, dtype=np.float32))
             action = env.action_space.sample()
             next_state, reward, terminated, truncated, info = env.step(action)
             cur_next_observations.append(np.array(next_state, dtype=np.float32))
-            cur_actions.append(np.array(action, dtype=np.float32)[None])
+            cur_actions.append(np.array(action, dtype=np.float32))
             done = truncated# or terminated
             obs = next_state
             cur_dones.append(np.array(done, dtype=np.float32))
@@ -140,7 +189,7 @@ def q_learning(env, num_episodes: int, layout_type: int, alpha=0.1, gamma=0.99, 
                 action = np.argmax(Q[obs[0], obs[1], :])
             next_state, reward, terminated, truncated, info = env.step(action)
             done = truncated
-            cur_actions.append(np.array(action, dtype=np.float32)[None])
+            cur_actions.append(np.array(action, dtype=np.float32))
             Q[obs[0], obs[1], action] += alpha * (reward + gamma * np.max(Q[next_state[0], next_state[1], :]) - Q[obs[0], obs[1], action])
             obs = next_state
             cur_dones.append(np.array(done, dtype=np.float32))

@@ -343,7 +343,8 @@ class GCDataset:
         traj_indx = start_pos[:, None] + np.arange(context_length)
         traj_indx = np.minimum(traj_indx, final_state_idxs[:, None])
         # indx = np.random.randint(self.dataset.size-1, size=batch_size)
-        batch = self.dataset.sample(batch_size, indx)
+        #batch = self.dataset.sample(batch_size, indx)
+        batch = self.sample(batch_size, idxs=indx)
         # #traj_indx = self.sample_goals(indx_expand, p_trajgoal=1.0, p_curgoal=0.0, geom_sample=True, p_randomgoal=0.0)
         # final_state_idxs = self.terminal_locs[np.searchsorted(self.terminal_locs, indx)] # end of traj
         # start_state_idxs = self.terminal_locs[np.searchsorted(self.terminal_locs, indx) - 1]# start of traj
@@ -354,7 +355,7 @@ class GCDataset:
         #traj_indx = traj_indx.reshape(batch_size, num_traj_states-1) # (batch_size, num_traj_states)
         
         batch['traj_states'] = jax.tree_map(lambda arr: arr[traj_indx], self.dataset['observations'])
-        batch['traj_actions'] = jax.tree_map(lambda arr: arr[traj_indx], self.dataset['actions'])
+        batch['traj_actions'] = jax.tree_map(lambda arr: arr[traj_indx], self.dataset['actions'])[..., None]
         batch['traj_next_states'] = jax.tree_map(lambda arr: arr[traj_indx], self.dataset['next_observations'])
         # batch['traj_states'] = np.concatenate([batch['observations'][:,None,:], batch['traj_states']], axis=1)
         # batch['traj_actions'] = np.concatenate([batch['actions'][:, None], batch['traj_actions']], axis=1)[..., None]
