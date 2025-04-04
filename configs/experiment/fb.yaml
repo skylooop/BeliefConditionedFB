@@ -24,8 +24,9 @@ agent:
   # B Network
   b_hidden_dims: [512, 512, 512]  # Value network hidden dimensions.
   b_layer_norm: True  # Whether to use layer normalization.
+  number_of_meta_envs: 1
+  use_context: False
 
-  # in discrete case actor is deterministic
   # MISC
   discount: 0.99
   tau: 0.01  # Target network update rate.

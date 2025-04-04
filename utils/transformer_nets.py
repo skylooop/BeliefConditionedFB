@@ -180,7 +180,6 @@ class LinearProbing(nn.Module):
         
     def __call__(self, dynamics_embedding):
         logits = self.state_predictor(dynamics_embedding)
-        # distribution = distrax.Categorical(logits=logits / jnp.maximum(1e-6, 0.0))
         return logits
 
 class DynamicsTransformer(nn.Module):

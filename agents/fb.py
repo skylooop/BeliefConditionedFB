@@ -57,7 +57,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             target_M2 = target_F2 @ target_B.T
             target_M = jnp.minimum(target_M1, target_M2)
             
-            cur_idx = batch['actions'].repeat(repeats=z_latent.shape[-1], axis=1).astype(jnp.int16)[:, :, None]
+            cur_idx = batch['actions'][..., None].repeat(repeats=z_latent.shape[-1], axis=1).astype(jnp.int16)[:, :, None]
             F1, F2 = self.network.select('f_value')(batch['observations'], z_latent, params=grad_params)
             F1 = jnp.take_along_axis(F1, cur_idx, axis=-1).squeeze()
             F2 = jnp.take_along_axis(F2, cur_idx, axis=-1).squeeze()
@@ -317,9 +317,9 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         network_args = {k: v[1] for k, v in network_info.items()}
 
         network_def = ModuleDict(networks)
-        lr_schedule = optax.linear_schedule(init_value=3e-4, end_value=1e-4, transition_begin=150_000, transition_steps=1_000_000)
-        network_tx = optax.chain(optax.clip_by_global_norm(1.0) if config['clip_by_global_norm'] else optax.identity(),
-                                 optax.adam(learning_rate=lr_schedule))#=config['lr']))
+        #lr_schedule = optax.linear_schedule(init_value=3e-4, end_value=1e-4, transition_begin=150_000, transition_steps=1_000_000)
+        network_tx = optax.chain(optax.clip_by_global_norm(1.0),
+                                 optax.adam(learning_rate=config['lr']))
         
         network_params = network_def.init(init_rng, **network_args)['params']
         network = TrainState.create(network_def, network_params, tx=network_tx)

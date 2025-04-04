@@ -361,7 +361,7 @@ class GCIQLAgent(flax.struct.PyTreeNode):
                 action_dim=action_dim,
                 causal=False,
                 emb_dim=config['emb_dim'],
-                mlp_dim=128,
+                mlp_dim=config['mlp_dim'],
                 dropout_rate=0.0,
                 attention_dropout_rate=0.0,
                 context_len=config['context_len']

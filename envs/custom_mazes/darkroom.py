@@ -5,7 +5,7 @@ from envs.custom_mazes.generators.four_room import generate_four_room_env, fourr
 from envs.custom_mazes.generators.gridworld import gridworld
 
 from envs.custom_mazes.motion import VonNeumannMotion
-from gymnasium.spaces import Discrete, Box
+import gymnasium.spaces as spaces
 import matplotlib.pyplot as plt
 
 class Maze(BaseMaze):
@@ -37,11 +37,9 @@ class FourRoomsMazeEnv(BaseEnv):
         
         self.maze = maze
         self.motions = VonNeumannMotion()
-        self.action_space = Discrete(len(self.motions))
+        self.action_space = spaces.Discrete(len(self.motions))
         if obs_type == "xy":
-            self.observation_space = Box(low=1, high=self.maze.size[0] - 1, shape=(2, ), dtype=np.uint8)
-        elif obs_type == "onehot":
-            self.observation_space = Box(low=0, high=1, shape=(self.maze.size[0] ** 2, ), dtype=np.uint8)
+            self.observation_space = spaces.MultiDiscrete(nvec=[self.maze.size[0], self.maze.size[1]]).sample()
         self.goal = None
         self.start = None
         self.maze_state = self.maze.maze_grid
@@ -55,6 +53,7 @@ class FourRoomsMazeEnv(BaseEnv):
     
     def reset(self, seed=None, options={}):
         super().reset(seed=seed, options=options)
+        self.coverage_map = np.zeros(shape=self.maze.size)
         start_idx = options.get('start', None)
         goal_idx = options.get('goal', None)
 
@@ -119,8 +118,9 @@ class FourRoomsMazeEnv(BaseEnv):
         return False
     
     def step(self, action):
-        motion = self.motions[action]
         current_position = self.maze.objects.agent.positions[0]
+        self.coverage_map[current_position[1], current_position[0]] += 1
+        motion = self.motions[action]
         new_position = [current_position[0] + motion[0], current_position[1] + motion[1]]
         valid = self._is_valid(new_position)
         reward = 0.0

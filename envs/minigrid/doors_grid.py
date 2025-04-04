@@ -26,12 +26,14 @@ class DynamicsGeneralization_Doors(MiniGridEnv):
         agent_start_pos=(1, 4),
         agent_start_dir=0,
         max_steps: int | None = None,
+        task_num: int = 0,
         **kwargs,
     ):
         # Current (hidden) state, which generated 
         self.agent_start_pos = agent_start_pos
         self.agent_start_dir = agent_start_dir
-
+        self.task_num = task_num
+        
         mission_space = MissionSpace(mission_func=self._gen_mission)
         super().__init__(
             mission_space=mission_space,
@@ -72,9 +74,17 @@ class DynamicsGeneralization_Doors(MiniGridEnv):
                 
         self.grid.set(3, door_3, Door(COLOR_NAMES[0], is_locked=False, is_open=True))
         self.grid.set(5, door_5, Door(COLOR_NAMES[3], is_locked=False, is_open=True))
-    
-        self.put_obj(Goal(), width - 2, 4)
-        self.goal_pos = np.array((width-2, 4))
+        
+        if self.task_num == 0: # currently hardcoded
+            goal_coordinates = (width - 2, 4)
+        elif self.task_num == 1:
+            goal_coordinates = (width - 2, 1)
+        elif self.task_num == 2:
+            goal_coordinates = (width - 2, 7)
+            
+        self.put_obj(Goal(), goal_coordinates[0], goal_coordinates[1])
+        self.goal_pos = np.array((goal_coordinates[0], goal_coordinates[1]))
+        
         # Place the agent
         if self.agent_start_pos is not None:
             self.agent_pos = self.agent_start_pos
@@ -140,7 +150,7 @@ class MinigridWrapper(gym.Env):
         # Generate the observation and return the result
         # obs = self.env.unwrapped.gen_obs()
         return new_pos, reward, terminated, truncated, {"goal_pos": self.env.unwrapped.goal_pos}
-      
+    
     def reset(self, seed = None):
         self.coverage_map = np.zeros(shape=(self.env.unwrapped.width, self.env.unwrapped.height))
         obs, info = self.env.reset(seed=seed)

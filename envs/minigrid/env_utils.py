@@ -69,53 +69,51 @@ def convert_trajs_to_dict(trajs, pad_value=-1.0):
     
     return dict(result)
 
-def random_exploration_old(env, num_episodes: int, layout_type: int):
+def random_exploration_fourrooms(env, num_episodes: int, layout_type: int, num_mdp: int):
     dataset = dict()
     observations = []
     actions = []
     dones = []
-    valid_transitions = []
+    next_observations = []
     
     for _ in range(num_episodes):
-        env.reset()
+        obs, _ = env.reset()
         cur_observations = []
         cur_actions = []
         cur_dones = []
-        transition_possible = []
+        cur_next_observations = []
         done = False
-        while not done:
-            prev_state = env.env.unwrapped.agent_pos
-            cur_observations.append(np.array(env.env.unwrapped.agent_pos, dtype=np.float32))
-            #action = np.random.choice(available_actions, replace=True)
-            action = env.env.unwrapped.action_space.sample()
+        step = 0
+        while not done and step < env.max_steps:
+            step += 1
+            cur_observations.append(np.array(obs, dtype=np.float32))
+            action = env.action_space.sample()
             next_state, reward, terminated, truncated, info = env.step(action)
-            if env.env.unwrapped.agent_pos == prev_state:
-                transition_possible.append(np.array(0, dtype=np.int8))
-            else:
-                transition_possible.append(np.array(1, dtype=np.int8))
+            cur_next_observations.append(np.array(next_state, dtype=np.float32))
             cur_actions.append(np.array(action, dtype=np.float32))
-            done = truncated
+            done = truncated# or terminated
+            obs = next_state
             cur_dones.append(np.array(done, dtype=np.float32))
             
-        observations.append(np.stack(cur_observations))
+        observations.append(np.stack(cur_observations)) # seq_len x dim
         actions.append(np.stack(cur_actions))
         dones.append(np.stack(cur_dones))
-        valid_transitions.append(np.stack(transition_possible))
+        next_observations.append(np.stack(cur_next_observations))
         
     dataset['observations'] = np.concatenate(observations)
     dataset['terminals'] = np.concatenate(dones)
     dataset['actions'] = np.concatenate(actions)
-    dataset['valid_transitions'] = np.concatenate(valid_transitions)
+    dataset['next_observations'] = np.concatenate(next_observations)
     
     ob_mask = (1.0 - dataset['terminals']).astype(bool)
     next_ob_mask = np.concatenate([[False], ob_mask[:-1]])
-    dataset['next_observations'] = dataset['observations'][next_ob_mask]
+    # dataset['next_observations'] = dataset['observations'][next_ob_mask]
+    dataset['next_observations'] = dataset['next_observations'][ob_mask]
     dataset['observations'] = dataset['observations'][ob_mask]
     dataset['actions'] = dataset['actions'][ob_mask].astype(np.int8)
-    dataset['valid_transitions'] = dataset['valid_transitions'][ob_mask].astype(np.int8)
     new_terminals = np.concatenate([dataset['terminals'][1:], [1.0]])
     dataset['terminals'] = new_terminals[ob_mask].astype(np.float32)
-    # dataset['layout_type'] = np.repeat(np.array(layout_type), repeats=(dataset['actions'].shape[0], ))
+    dataset['layout_type'] = np.tile(one_hot(np.array(layout_type), num_mdp), reps=(dataset['actions'].shape[0], 1))
     return dataset, env
 
 def random_exploration(env, num_episodes: int, layout_type: int, num_mdp: int):

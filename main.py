@@ -52,11 +52,11 @@ def main(cfg: DictConfig):
     config = OmegaConf.to_container(cfg, resolve=True)
     pprint(config)
     run = setup_wandb(project='ZeroShotRL', group=config['run_group'], name=exp_name,
-                      mode="offline" if FLAGS.disable_jit else "online", config=config, tags=config['tags'])
+                    mode="offline" if FLAGS.disable_jit else "online", config=config, tags=config['tags'])
     env, eval_env, train_dataset, val_dataset = make_env_and_datasets(dataset_name=config['env']['env_name'],
-                                                                      frame_stack=config['agent']['frame_stack'],
-                                                                      action_clip_eps=1e-5 if not config['env']['discrete'] else None,
-                                                                      context_len=config['agent']['context_len'] if config['agent']['use_context'] else None)
+                                                                    frame_stack=config['agent']['frame_stack'],
+                                                                    action_clip_eps=1e-5 if not config['env']['discrete'] else None,
+                                                                    context_len=config['agent']['context_len'] if config['agent']['use_context'] else None)
     dataset_class = {
         'GCDataset': GCDataset,
         #'HGCDataset': HGCDataset,

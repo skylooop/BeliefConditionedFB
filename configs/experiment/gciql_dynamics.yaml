@@ -31,10 +31,11 @@ agent:
   warmup_steps: 50000
   n_blocks: 4
   n_heads: 4
-  emb_dim: 96
-  output_dim: 8
+  emb_dim: 72 # 96
+  mlp_dim: 256
+  output_dim: 4 # changed
   context_len: 128
-  number_of_meta_envs: 2
+  number_of_meta_envs: 3
   use_masked_attention: False
   use_mean_embedding: True
   cosine_schedule: False
