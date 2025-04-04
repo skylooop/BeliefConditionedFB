@@ -361,11 +361,11 @@ class FValue(nn.Module):
         self.forward_map = forward_mlp_module((*self.f_hidden_dims, self.latent_z_dim), activate_final=False, layer_norm=self.f_layer_norm)
         
         self.forward_preprocessor_sa = mlp_module(hidden_dims=self.f_preprocessor_hidden_dims, layer_norm=self.f_layer_norm,
-                                                  activate_final=self.activate_final)
+                                                activate_final=self.activate_final)
         self.forward_preprocessor_sz = mlp_module(hidden_dims=self.f_preprocessor_hidden_dims, layer_norm=self.f_layer_norm,
-                                                  activate_final=self.activate_final)
+                                                activate_final=self.activate_final)
     
-    def __call__(self, observations, actions, latent_z, context_z=None):
+    def __call__(self, observations, actions, latent_z, context_z=None, mdp_num=None):
         if self.preprocess:
             processed_sa = self.forward_preprocessor_sa(jnp.concatenate([observations, actions], -1))
             processed_sz = self.forward_preprocessor_sz(jnp.concatenate([observations, latent_z], -1))
@@ -373,6 +373,8 @@ class FValue(nn.Module):
             processed_sa = jnp.concatenate([observations, actions], -1)
             processed_sz = jnp.concatenate([observations, latent_z], -1)
         input = [processed_sa, processed_sz]
+        if mdp_num is not None:
+            input.append(mdp_num)
         if context_z is not None:
             input.append(context_z)
         f1, f2 = self.forward_map(jnp.concatenate(input, -1))
@@ -390,10 +392,14 @@ class FValueDiscrete(nn.Module):
         self.forward_map = forward_mlp_module((*self.f_hidden_dims, self.latent_z_dim * self.action_dim), activate_final=False,
                                       layer_norm=self.f_layer_norm)
         
-    def __call__(self, observations, latent_z, context_z=None):
+    def __call__(self, observations, latent_z, context_z=None, mdp_num=None, dynamics_embedding=None):
         input = [observations, latent_z]
         if context_z is not None:
             input.append(context_z)
+        if mdp_num is not None:
+            input.append(mdp_num)
+        if dynamics_embedding is not None:
+            input.append(dynamics_embedding)
         f1, f2 = self.forward_map(jnp.concatenate(input, -1))        
         return f1.reshape(-1, self.latent_z_dim, self.action_dim), f2.reshape(-1, self.latent_z_dim, self.action_dim)
 
@@ -407,10 +413,14 @@ class BValue(nn.Module):
                                 kernel_init=orthogonal_scaling())
         self.project_onto = LengthNormalize()
         
-    def __call__(self, goal, context_z=None):
+    def __call__(self, goal, context_z=None, mdp_num=None, dynamics_embedding=None):
         input = [goal]
         if context_z is not None:
             input.append(context_z)
+        if mdp_num is not None:
+            input.append(mdp_num)
+        if dynamics_embedding is not None:
+            input.append(dynamics_embedding)
         backward = self.backward_map(jnp.concatenate(input, -1))
         project = self.project_onto(backward)
         return project

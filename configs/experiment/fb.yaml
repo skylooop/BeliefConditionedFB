@@ -24,9 +24,20 @@ agent:
   # B Network
   b_hidden_dims: [512, 512, 512]  # Value network hidden dimensions.
   b_layer_norm: True  # Whether to use layer normalization.
-  number_of_meta_envs: 1
-  use_context: False
+  number_of_meta_envs: 2
 
+  # Transformer
+  use_context: True
+  warmup_steps: 50000
+  n_blocks: 4
+  n_heads: 4
+  emb_dim: 72 # 96
+  mlp_dim: 256
+  output_dim: 4 # changed
+  context_len: 128
+  use_masked_attention: False
+  use_mean_embedding: True
+  cosine_schedule: False
   # MISC
   discount: 0.99
   tau: 0.01  # Target network update rate.

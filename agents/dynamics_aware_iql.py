@@ -64,7 +64,7 @@ class GCIQLAgent(flax.struct.PyTreeNode):
                 dynamics_embedding_mean, dynamics_embedding_log_std = self.network.select('dynamic_transformer')(batch_context['observations'], batch_context['actions'],
                                                                                 batch_context['next_observations'], train=True, return_embedding=True, params=grad_params)
             else:
-                dynamics_embedding_mean, dynamics_embedding_log_std = self.network.select('dynamic_transformer')(batch['traj_states'], batch_context['traj_actions'],
+                dynamics_embedding_mean, dynamics_embedding_log_std = self.network.select('dynamic_transformer')(batch['traj_states'], batch['traj_actions'],
                                                                                 batch['traj_next_states'], train=False)
             dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=self.rng, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_embedding_log_std)
             stop_grad_dynamics_embedding = jax.lax.stop_gradient(dynamics_embedding)
