@@ -57,16 +57,16 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
                 target_F2 = jnp.take_along_axis(target_F2, next_idx, axis=-1).squeeze()
                 next_Q = next_Q.max(-1)
                 
-            target_B = self.network.select('target_b_value')(batch['next_observations'], mdp_num=batch['layout_type'])
+            target_B = self.network.select('target_b_value')(batch['next_observations'], mdp_num=batch['layout_type'] if not self.config['use_context'] else None, dynamics_embedding=dynamics_embedding)
             target_M1 = target_F1 @ target_B.T
             target_M2 = target_F2 @ target_B.T
             target_M = jnp.minimum(target_M1, target_M2)
             
             cur_idx = batch['actions'][..., None].repeat(repeats=z_latent.shape[-1], axis=1).astype(jnp.int16)[:, :, None]
-            F1, F2 = self.network.select('f_value')(batch['observations'], z_latent, mdp_num=batch['layout_type'], params=grad_params)
+            F1, F2 = self.network.select('f_value')(batch['observations'], z_latent, mdp_num=batch['layout_type'] if not self.config['use_context'] else None, dynamics_embedding=dynamics_embedding, params=grad_params)
             F1 = jnp.take_along_axis(F1, cur_idx, axis=-1).squeeze()
             F2 = jnp.take_along_axis(F2, cur_idx, axis=-1).squeeze()
-            B = self.network.select('b_value')(batch['next_observations'], mdp_num=batch['layout_type'], params=grad_params)
+            B = self.network.select('b_value')(batch['next_observations'], mdp_num=batch['layout_type'] if not self.config['use_context'] else None, dynamics_embedding=dynamics_embedding, params=grad_params)
             M1 = F1 @ B.T
             M2 = F2 @ B.T
         
