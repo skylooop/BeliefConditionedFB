@@ -353,7 +353,7 @@ class GCIQLAgent(flax.struct.PyTreeNode):
         if config['use_context']:
             from utils.transformer_nets import DynamicsTransformer, NextStatePrediction
 
-            next_state_pred_def = NextStatePrediction(hidden_dims=(128, 128, 128), out_dim=ex_observations.shape[-1])
+            next_state_pred_def = NextStatePrediction(hidden_dims=config['world_pred_hidden'], out_dim=ex_observations.shape[-1])
             dynamics_def = DynamicsTransformer(
                 num_layers=config['n_blocks'],
                 num_heads=config['n_heads'],

@@ -28,17 +28,18 @@ agent:
   
   # Transformer
   use_context: True
-  warmup_steps: 50000
+  dyn_encoder_warmup_steps: 50000
   n_blocks: 4
   n_heads: 4
   emb_dim: 72 # 96
   mlp_dim: 256
   output_dim: 4 # changed
-  context_len: 128
-  number_of_meta_envs: 3
+  context_len: 100
+  number_of_meta_envs: 5
   use_masked_attention: False
   use_mean_embedding: True
   cosine_schedule: False
+  world_pred_hidden: [128, 128, 128]
 
   # MISC
   discount: 0.99

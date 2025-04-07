@@ -153,12 +153,11 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5, 
     if 'doors' in dataset_name:
         from envs.minigrid.doors_grid import DynamicsGeneralization_Doors, MinigridWrapper
         
-        env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=context_len) # SAME AS CONTEXT LEN
+        env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=context_len)
         eval_env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=context_len)
 
-        env = MinigridWrapper(env)
         if 'context' in dataset_name:
-            train_dataset = np.load(f"/home/m_bobrin/ZeroShotRL/aux_data/iql_door_data_meta.npy", allow_pickle=True).item() 
+            train_dataset = np.load(f"/home/m_bobrin/ZeroShotRL/aux_data/gciql_dyn_doors.npy", allow_pickle=True).item() 
         else:
             train_dataset = np.load(f"/home/m_bobrin/ZeroShotRL/aux_data/iql_door_data_0.npy", allow_pickle=True).item() # layout_type
         

@@ -31,9 +31,9 @@ agent:
   warmup_steps: 50000
   n_blocks: 4
   n_heads: 4
-  emb_dim: 96 # 72
+  emb_dim: 72 # 72
   mlp_dim: 256
-  output_dim: 16 # changed
+  output_dim: 4 # changed
   context_len: 100
   use_masked_attention: False
   use_mean_embedding: True

@@ -16,7 +16,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
     network: Any
     config: Any = nonpytree_field()
 
-    def fb_loss(self, batch, z_latent, grad_params, rng):
+    def fb_loss(self, batch, z_latent, dynamics_embedding, grad_params, rng):
         rng, sample_rng = jax.random.split(rng)
         
         # Target M for continuous actor
@@ -36,9 +36,9 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             M1 = F1 @ B.T
             M2 = F2 @ B.T
         else:
-            dynamics_embedding_mean, dynamics_embedding_log_std = self.network.select('dynamic_transformer')(batch['traj_states'], batch['traj_actions'],
-                                                                                batch['traj_next_states'], train=False)
-            dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=self.rng, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_embedding_log_std)
+            # dynamics_embedding_mean, dynamics_embedding_log_std = self.network.select('dynamic_transformer')(batch['traj_states'], batch['traj_actions'],
+            #                                                                     batch['traj_next_states'], train=False)
+            # dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=self.rng, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_embedding_log_std)
             target_F1, target_F2 = self.network.select('target_f_value')(batch['next_observations'], z_latent, mdp_num=batch['layout_type'] if not self.config['use_context'] else None,
                                                                         dynamics_embedding=dynamics_embedding)
             next_Q1 = jnp.einsum('sda, sd -> sa', target_F1, z_latent)
@@ -57,13 +57,15 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
                 target_F2 = jnp.take_along_axis(target_F2, next_idx, axis=-1).squeeze()
                 next_Q = next_Q.max(-1)
                 
-            target_B = self.network.select('target_b_value')(batch['next_observations'], mdp_num=batch['layout_type'] if not self.config['use_context'] else None, dynamics_embedding=dynamics_embedding)
+            target_B = self.network.select('target_b_value')(batch['next_observations'],
+                                                            mdp_num=batch['layout_type'] if not self.config['use_context'] else None, dynamics_embedding=dynamics_embedding)
             target_M1 = target_F1 @ target_B.T
             target_M2 = target_F2 @ target_B.T
             target_M = jnp.minimum(target_M1, target_M2)
             
             cur_idx = batch['actions'][..., None].repeat(repeats=z_latent.shape[-1], axis=1).astype(jnp.int16)[:, :, None]
-            F1, F2 = self.network.select('f_value')(batch['observations'], z_latent, mdp_num=batch['layout_type'] if not self.config['use_context'] else None, dynamics_embedding=dynamics_embedding, params=grad_params)
+            F1, F2 = self.network.select('f_value')(batch['observations'], z_latent,
+                                                    mdp_num=batch['layout_type'] if not self.config['use_context'] else None, dynamics_embedding=dynamics_embedding, params=grad_params)
             F1 = jnp.take_along_axis(F1, cur_idx, axis=-1).squeeze()
             F2 = jnp.take_along_axis(F2, cur_idx, axis=-1).squeeze()
             B = self.network.select('b_value')(batch['next_observations'], mdp_num=batch['layout_type'] if not self.config['use_context'] else None, dynamics_embedding=dynamics_embedding, params=grad_params)
@@ -78,13 +80,12 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         fb_loss = fb_diag + fb_offdiag
         
         # Orthonormality loss
-        cov_b = (B @ B.T)# / jnp.sqrt(B.shape[-1])
+        cov_b = (B @ B.T)
         ort_loss_diag = -2 * jnp.diag(cov_b).mean()
         ort_loss_offdiag = (cov_b[off_diag] ** 2).mean()
         ort_b_loss = ort_loss_diag + ort_loss_offdiag
         total_loss = fb_loss + ort_b_loss
         
-        # correct_fb = jnp.argmax(M1, axis=1) == jnp.argmax(I, axis=1)
         correct_ort = jnp.argmax(cov_b, axis=-1) == jnp.argmax(I, axis=-1)
         
         return total_loss, {
@@ -110,7 +111,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             # "M": M1.mean(),
         }
 
-    def actor_loss(self, batch, z_latent, grad_params, rng):
+    def actor_loss(self, batch, z_latent, dynamics_embedding, grad_params, rng):
         rng, sample_rng = jax.random.split(rng)
 
         dist = self.network.select('actor')(batch['observations'], z_latent, params=grad_params)
@@ -153,13 +154,18 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         rng, actor_rng, fb_recon_rng = jax.random.split(rng, 3)
         actor_loss = 0.0
         fb_loss = 0.0
+        
+        dynamics_embedding_mean, dynamics_embedding_log_std = self.network.select('dynamic_transformer')(batch['traj_states'], batch['traj_actions'],
+                                                                                batch['traj_next_states'], train=False)
+        dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=self.rng, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_embedding_log_std)
+        
         if not train_context_embedding:
-            fb_loss, fb_info = self.fb_loss(batch, latent_z, grad_params, fb_recon_rng)
+            fb_loss, fb_info = self.fb_loss(batch, latent_z, dynamics_embedding, grad_params, fb_recon_rng)
             for k, v in fb_info.items():
                 info[f'fb/{k}'] = v
 
             if not self.config['discrete']:
-                actor_loss, actor_info = self.actor_loss(batch, latent_z, grad_params, actor_rng)
+                actor_loss, actor_info = self.actor_loss(batch, latent_z, dynamics_embedding, grad_params, actor_rng)
                 for k, v in actor_info.items():
                     info[f'actor/{k}'] = v
 

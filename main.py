@@ -276,7 +276,7 @@ def main(cfg: DictConfig):
                     
                     if config['agent']['use_context']:
                         embedding_img_mdps = image_mdps(test_embedding_data, embedding_fn=partial(agent.network.select('dynamic_transformer'),
-                                                                                                  train=False, return_embedding=True), colors=colors)
+                                                                                                train=False, return_embedding=True), colors=colors)
                         eval_metrics['draw_mdps_emb/PCA_mdps_emb_'] = wandb.Image(embedding_img_mdps)
                         
                     # if len(layout0_embs) > 30:
