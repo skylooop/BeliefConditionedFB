@@ -131,10 +131,14 @@ def random_exploration(env, num_episodes: int, layout_type: int, num_mdp: int):
         cur_next_observations = []
         done = False
         step = 0
+        cur_action_num = 0
         while not done and step < env.env.unwrapped.max_steps:
             step += 1
             cur_observations.append(np.array(obs, dtype=np.float32))
+            #if cur_action_num > 4 or step == 1:
             action = env.action_space.sample()
+            #    cur_action_num = 0
+            #cur_action_num += 1
             next_state, reward, terminated, truncated, info = env.step(action)
             cur_next_observations.append(np.array(next_state, dtype=np.float32))
             cur_actions.append(np.array(action, dtype=np.float32))
@@ -162,6 +166,59 @@ def random_exploration(env, num_episodes: int, layout_type: int, num_mdp: int):
     dataset['terminals'] = new_terminals[ob_mask].astype(np.float32)
     dataset['layout_type'] = np.tile(one_hot(np.array(layout_type), num_mdp), reps=(dataset['actions'].shape[0], 1))
     return dataset, env
+
+def q_learning_fourrooms(env, num_episodes: int, layout_type: int, alpha=0.1, gamma=0.99, epsilon=0.7, num_mdp=1):
+    Q = np.zeros((env.maze.size[0], env.maze.size[1], env.action_space.n))
+    dataset = dict()
+    observations = []
+    actions = []
+    dones = []
+    next_observations = []
+    for _ in range(num_episodes):
+        obs, info = env.reset()
+        done = False
+        step = 0
+        cur_observations = []
+        cur_actions = []
+        cur_dones = []
+        cur_next_observations = []
+        
+        while not done:
+            cur_observations.append(np.array(obs, dtype=np.float32))
+            if (np.random.rand() < epsilon) or step < 50:
+                action = env.action_space.sample()
+            else:
+                action = np.argmax(Q[obs[0], obs[1], :])
+            next_state, reward, terminated, truncated, info = env.step(action)
+            done = truncated
+            cur_actions.append(np.array(action, dtype=np.float32))
+            Q[obs[0], obs[1], action] += alpha * (reward + gamma * np.max(Q[next_state[0], next_state[1], :]) - Q[obs[0], obs[1], action])
+            obs = next_state
+            cur_dones.append(np.array(done, dtype=np.float32))
+            cur_next_observations.append(np.array(next_state))
+            step+=1
+            
+        observations.append(np.stack(cur_observations))
+        actions.append(np.stack(cur_actions))
+        dones.append(np.stack(cur_dones))
+        next_observations.append(np.stack(cur_next_observations))
+        
+    dataset['observations'] = np.concatenate(observations)
+    dataset['terminals'] = np.concatenate(dones)
+    dataset['actions'] = np.concatenate(actions)
+    dataset['next_observations'] = np.concatenate(next_observations)
+    
+    ob_mask = (1.0 - dataset['terminals']).astype(bool)
+    next_ob_mask = np.concatenate([[False], ob_mask[:-1]])
+    # dataset['next_observations'] = dataset['observations'][next_ob_mask]
+    dataset['next_observations'] = dataset['next_observations'][ob_mask]
+    dataset['observations'] = dataset['observations'][ob_mask]
+    dataset['actions'] = dataset['actions'][ob_mask].astype(np.int8)
+    new_terminals = np.concatenate([dataset['terminals'][1:], [1.0]])
+    dataset['terminals'] = new_terminals[ob_mask].astype(np.float32)
+    dataset['layout_type'] = np.tile(one_hot(np.array(layout_type), num_mdp), reps=(dataset['actions'].shape[0], 1))
+    return dataset, env
+
 
 def q_learning(env, num_episodes: int, layout_type: int, alpha=0.1, gamma=0.99, epsilon=0.7, num_mdp=1):
     Q = np.zeros((env.env.unwrapped.width, env.env.unwrapped.height, env.env.unwrapped.action_space.n))
