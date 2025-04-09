@@ -120,22 +120,22 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5, 
     if 'fourrooms-dynamics' in dataset_name:
         from envs.custom_mazes.darkroom import FourRoomsMazeEnv, Maze
         
-        env = FourRoomsMazeEnv(Maze(maze_type='fourrooms', size=dataset_name.split("-")[-1]))
-        eval_env = FourRoomsMazeEnv(Maze(maze_type='fourrooms', size=dataset_name.split("-")[-1]))
+        env = FourRoomsMazeEnv(Maze(maze_type='fourrooms_random_layouts'))
+        eval_env = FourRoomsMazeEnv(Maze(maze_type='fourrooms_random_layouts'))
         env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
         eval_env = EpisodeMonitor(eval_env, filter_regexes=['.*privileged.*', '.*proprio.*'])
-        train_dataset = np.load("aux_data/fourrooms_meta_data.npy", allow_pickle=True)[()]
+        train_dataset = np.load("aux_data/fourrooms_meta3_data.npy", allow_pickle=True)[()] # number means number of training layouts
         train_dataset = Dataset.create(**train_dataset)
         val_dataset = train_dataset
         
-    if 'fourrooms' in dataset_name:
+    if 'fourrooms-vanilla' in dataset_name:
         from envs.custom_mazes.darkroom import FourRoomsMazeEnv, Maze
         
-        env = FourRoomsMazeEnv(Maze(maze_type='fourrooms', size=dataset_name.split("-")[-1]))
-        eval_env = FourRoomsMazeEnv(Maze(maze_type='fourrooms', size=dataset_name.split("-")[-1]))
+        env = FourRoomsMazeEnv(Maze())
+        eval_env = FourRoomsMazeEnv(Maze())
         env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
         eval_env = EpisodeMonitor(eval_env, filter_regexes=['.*privileged.*', '.*proprio.*'])
-        train_dataset = np.load("aux_data/fourroom_data.npy", allow_pickle=True)[()]
+        train_dataset = np.load("aux_data/fourroom_vanilla_data.npy", allow_pickle=True)[()]
         train_dataset = Dataset.create(**train_dataset)
         val_dataset = train_dataset
 

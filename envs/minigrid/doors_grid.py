@@ -13,6 +13,33 @@ from minigrid.core.constants import COLOR_NAMES
 import gymnasium as gym
 from minigrid.wrappers import SymbolicObsWrapper
 
+class ActionRepeatWrapper(gym.Wrapper):
+    def __init__(self, env, action_repeat=4, action_repeat_mode="id"):
+        super().__init__(env)
+        self.action_repeat = action_repeat
+        self.action_repeat_mode = action_repeat_mode
+
+    def get_obs(self, *args, **kwargs):
+        obs = self.unwrapped._get_obs(*args, **kwargs)
+        return obs
+
+    def step(self, action):
+        status = self.env.step(action)
+
+        for i in range(1, self.action_repeat):
+            if self.action_repeat_mode == "id":
+                step_a = action
+            elif self.action_repeat_mode == "linear":
+                step_a = action - i * (action / self.action_repeat)
+            elif self.action_repeat_mode == "null":
+                step_a = np.array([0, 0])
+            else:
+                raise NotImplementedError
+
+            status = self.env.step(step_a)
+
+        return status
+
 class DiscreteActions(IntEnum):
     move_left = 2
     move_right = 3
@@ -151,7 +178,7 @@ class MinigridWrapper(gym.Env):
         # obs = self.env.unwrapped.gen_obs()
         return new_pos, reward, terminated, truncated, {"goal_pos": self.env.unwrapped.goal_pos}
     
-    def reset(self, seed = None):
+    def reset(self, seed = None, **kwargs):
         self.coverage_map = np.zeros(shape=(self.env.unwrapped.width, self.env.unwrapped.height))
         obs, info = self.env.reset(seed=seed)
         info['goal_pos'] = self.env.unwrapped.goal_pos

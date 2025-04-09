@@ -5,17 +5,21 @@ defaults:
   - override /agent: fb
 
 train_steps: 1_000_000
-log_interval: 5_000
-eval_interval: 10_000
-tags: [fb, continuous]
+log_interval: 10_000
+eval_interval: 100_000
+
+tags: [fb_vanilla, ogbench]
 
 agent:
+  use_context: False # since vanilla FB
+
   lr: 3e-4
   batch_size: 1024
 
   # FB Specific
-  z_dim: 128
+  z_dim: 50
   z_mix_ratio: 0.5
+
   # F network
   f_hidden_dims: [1024, 1024, 1024]  # Value network hidden dimensions.
   f_layer_norm: True  # Whether to use layer normalization.
@@ -27,7 +31,7 @@ agent:
   b_layer_norm: True  # Whether to use layer normalization.
 
   # Actor
-  actor_hidden_dims: [1024, 1024]  # Actor network hidden dimensions.
+  actor_hidden_dims: [1024, 1024, 1024]  # Actor network hidden dimensions.
   actor_preprocessor_hidden_dims: [1024, 1024, 512]  # Actor network hidden dimensions.
   actor_preprocessor_layer_norm: True  # Whether to use layer normalization for the actor.
   actor_preprocessor_activate_final: False
@@ -37,7 +41,7 @@ agent:
   const_std: True
 
   # MISC
-  discount: 0.98  # Discount factor. 0.99 - for maze, 0.98 others
+  discount: 0.99  # Discount factor. 0.99 - for maze, 0.98 others
   tau: 0.01  # Target network update rate.
 
 

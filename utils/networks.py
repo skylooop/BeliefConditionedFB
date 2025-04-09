@@ -61,13 +61,13 @@ class MLP(nn.Module):
         for i, size in enumerate(self.hidden_dims):
             x = nn.Dense(size, kernel_init=self.kernel_init)(x)
             if i + 1 < len(self.hidden_dims) or self.activate_final:
-                # if i == 0:
-                #     x = nn.tanh(x)
-                #     x = nn.LayerNorm()(x)
-                # else:
-                x = self.activations(x)
-                if self.layer_norm:
+                if i == 0:
+                    x = nn.tanh(x)
                     x = nn.LayerNorm()(x)
+                else:
+                    x = self.activations(x)
+                    if self.layer_norm:
+                        x = nn.LayerNorm()(x)
         return x
 
 class LengthNormalize(nn.Module):

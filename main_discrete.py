@@ -1,7 +1,7 @@
 import os
 import sys
 os.environ['MUJOCO_GL']='egl'
-# os.environ['CUDA_VISIBLE_DEVICES']='0'
+os.environ['CUDA_VISIBLE_DEVICES']='0'
 
 # import shutup
 # shutup.please()
@@ -227,10 +227,10 @@ def main(cfg: DictConfig):
     last_time = time.time()
     layout_types = [0, 1, 2]
     
-    if config['agent']['use_context']:
+    if config['env']['env_name'] == "doors-dynamics":
         plot_layouts = []
         for i in range(config['agent']['number_of_meta_envs']):
-            cur_layout = train_dataset.sample(256, layout_type=i, context_length=config['agent']['context_len'])[1]
+            cur_layout = train_dataset.sample(512, layout_type=i, context_length=config['agent']['context_len'])[1]
             plot_layouts.append(cur_layout)
         
         plot_layouts = functools.reduce(concatenate_dicts, plot_layouts)
@@ -247,7 +247,7 @@ def main(cfg: DictConfig):
         plot_layouts = jax.tree.map(lambda x, y, z: jnp.concatenate([x, y, z]), first_layout_trajs, sec_layout_trajs, third_layout_trajs)
         colors = ['blue'] * first_layout_trajs['traj_actions'].shape[0] + ['red'] * sec_layout_trajs['traj_actions'].shape[0] +\
             ['orange'] * third_layout_trajs['traj_actions'].shape[0]
-
+            
     pbar = tqdm(range(1, config['train_steps'] + 1), colour='green', dynamic_ncols=True, position=0, leave=True)
     for step in pbar:
         key = jax.random.fold_in(key, step)
@@ -255,9 +255,9 @@ def main(cfg: DictConfig):
             batch = train_dataset.sample(config['agent']['batch_size'])
             agent, update_info = agent.update(batch)
         else:
-            _, batch, _ = train_dataset.sample(config['agent']['batch_size'], layout_type=step % config['agent']['number_of_meta_envs'],
-                                                            context_length=config['agent']['context_len'])
-            agent, update_info = agent.update(batch, batch, train_context_embedding=True if step < config['agent']['dyn_encoder_warmup_steps'] else False)
+            batch = train_dataset.sample(config['agent']['batch_size'], layout_type=step % config['agent']['number_of_meta_envs'],
+                                        context_length=config['agent']['context_len'])[1]
+            agent, update_info = agent.update(batch, train_context_embedding=True if step < config['agent']['dyn_encoder_warmup_steps'] else False)
                 
         # Log metrics.
         if step % config['log_interval'] == 0 or step == 1:
@@ -271,6 +271,7 @@ def main(cfg: DictConfig):
         # Evaluate agent.
         if step == 1 or step % config['eval_interval'] == 0:
             eval_metrics = {}
+            overall_metrics = defaultdict(list)
             
             if 'doors' in config['env']['env_name']:
                 if 'gciql' in config['agent']['agent_name']:
@@ -283,14 +284,64 @@ def main(cfg: DictConfig):
                         eval_metrics[f'draw_policy/draw_policy_task_{layout_type}'] = wandb.Image(pred_policy_img)
                         
                     fig, ax = plt.subplots(figsize=(15, 10))
-                    dynamics_embedding_mean, std = iql_agent.network.select('dynamic_transformer')(plot_layouts['traj_states'], plot_layouts['traj_actions'],
+                    dynamics_embedding_mean, std = agent.network.select('dynamic_transformer')(plot_layouts['traj_states'], plot_layouts['traj_actions'],
                                                                 plot_layouts['traj_next_states'], train=False)
                     dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=key, shape=dynamics_embedding_mean.shape) * jnp.exp(std)
                     tsne = TSNE(random_state=42, perplexity=30).fit_transform(dynamics_embedding)
                     ax.scatter(tsne[:, 0], tsne[:, 1], color=colors)
+            
+            if 'fourrooms-dynamics' in config['env']['env_name']:
+                from envs.custom_mazes.dynamics_utils import visualize_policy, visualize_value_image
+                from envs.custom_mazes.darkroom import FourRoomsMazeEnv, Maze
+                
+                # First random layout
+                pred_policy_img = visualize_policy(env, agent, key, train_dataset, layout_type=0, task_num=step % 3)
+                pred_value_img = visualize_value_image(env, agent, key, example_batch, layout_type=0, task_num=step % 3)
+                
+                eval_metrics[f'draw_Q/draw_value_task_{step % 3}_layout_1'] = wandb.Image(pred_value_img)
+                eval_metrics[f'draw_policy/draw_policy_task_{step % 3}_layout_1'] = wandb.Image(pred_policy_img)
+                
+                # Second random layout
+                env = FourRoomsMazeEnv(Maze(maze_type='fourrooms_random_layouts'), max_steps=100)
+                pred_policy_img = visualize_policy(env, agent, key, train_dataset, layout_type=1, task_num=step % 3) # layout_type is dummy variable
+                pred_value_img = visualize_value_image(env, agent, key, example_batch, layout_type=1, task_num=step % 3)
+                
+                eval_metrics[f'draw_Q/draw_value_task_{step % 3}_layout_2'] = wandb.Image(pred_value_img)
+                eval_metrics[f'draw_policy/draw_policy_task_{step % 3}_layout_2'] = wandb.Image(pred_policy_img)
+                
+            if 'fourrooms-vanilla' in config['env']['env_name']:
+                from envs.custom_mazes.darkroom import visualize_value_image, visualize_policy
+                
+                pred_policy_img = visualize_policy(agent, train_dataset, task_num=step % 3) # just dummy hardcoded tasks to ensure that FB works
+                pred_value_img = visualize_value_image(agent, example_batch, task_num=step % 3)
+                
+                eval_metrics[f'draw_Q/draw_value_task_{step % 3}'] = wandb.Image(pred_value_img)
+                eval_metrics[f'draw_policy/draw_policy_task_{step % 3}'] = wandb.Image(pred_policy_img)
+                
+                for task_id in range(4):
+                    env.reset()
+                    eval_info, _, _ = evaluate_fourrooms(
+                            agent=agent,
+                            env=env,
+                            task_id=task_id,
+                            config=None,
+                            num_eval_episodes=1,
+                            num_video_episodes=0,
+                            video_frame_skip=1,
+                            eval_temperature=0.0,
+                            eval_gaussian=None
+                        )
+                    eval_metrics.update(
+                        {f'evaluation/task_{task_id}_{k}': v for k, v in eval_info.items() if k != 'total.timesteps'}
+                    )
+                    for k, v in eval_info.items():
+                        overall_metrics[k].append(v)
+                            
+                for k, v in overall_metrics.items():
+                    eval_metrics[f'evaluation/overall_{k}'] = np.mean(v)
                     
-                wandb.log(eval_metrics, step=step)
-                eval_logger.log(eval_metrics, step=step)
+            wandb.log(eval_metrics, step=step)
+            eval_logger.log(eval_metrics, step=step)
             
     train_logger.close()
     eval_logger.close()

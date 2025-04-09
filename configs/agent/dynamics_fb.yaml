@@ -1,5 +1,4 @@
-# Used for not only generalizing across different dynamics, but also across different tasks
-agent_name: dynamics_aware_fb
+agent_name: dynamics_fb
 
 lr: 3e-4
 batch_size: 1024

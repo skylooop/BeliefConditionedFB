@@ -231,7 +231,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         #     z = (rewards.T @ z)
         #z = self.project_z(z)
         return z
-        
+    
     @jax.jit
     def sample_actions(
         self,
@@ -337,7 +337,6 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         mdp_layout_one_hot = np.zeros((1, config['number_of_meta_envs'])) if not config['use_context'] else None
         if config['use_context']:
             dynamics_embedding = jnp.zeros((1, config['output_dim']))
-        
         network_info = dict(
             f_value=(forward_def, (ex_observations, ex_actions, latent_z)) if not config['discrete'] \
                 else (forward_def, (ex_observations, latent_z, mdp_layout_one_hot, dynamics_embedding)),
@@ -352,7 +351,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         if config['use_context']:
             from utils.transformer_nets import DynamicsTransformer, NextStatePrediction
 
-            next_state_pred_def = NextStatePrediction(hidden_dims=(128, 128, 128), out_dim=ex_observations.shape[-1])
+            next_state_pred_def = NextStatePrediction(hidden_dims=config['world_pred_hidden'], out_dim=ex_observations.shape[-1])
             dynamics_def = DynamicsTransformer(
                 num_layers=config['n_blocks'],
                 num_heads=config['n_heads'],

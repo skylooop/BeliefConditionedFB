@@ -3,8 +3,8 @@ import os
 import json
 from collections import defaultdict
 import rootutils
-import shutup
-shutup.please()
+
+os.environ['MUJOCO_GL']='egl'
 
 ROOT = rootutils.setup_root(search_from=__file__, cwd=True, pythonpath=True)
 
@@ -15,20 +15,20 @@ from agents import SACAgent
 from tqdm import trange
 from utils.evaluation import supply_rng
 from utils.flax_utils import restore_agent
-
+import envs.ogbench # noqa
 import ogbench.locomaze  # noqa
 
 FLAGS = flags.FLAGS
 
 flags.DEFINE_integer('seed', 0, 'Random seed.')
-flags.DEFINE_string('env_name', 'antmaze-large-v0', 'Environment name.')
-flags.DEFINE_string('dataset_type', 'navigate', 'Dataset type.')
+flags.DEFINE_string('env_name', 'pointmaze-medium-layout4', 'Environment name.')
+flags.DEFINE_string('dataset_type', 'explore', 'Dataset type.')
 flags.DEFINE_string('restore_path', 'experts/ant', 'Expert agent restore path.')
 flags.DEFINE_integer('restore_epoch', 400000, 'Expert agent restore epoch.')
-flags.DEFINE_string('save_path', None, 'Save path.')
+flags.DEFINE_string('save_path', '/home/m_bobrin/ZeroShotRL/aux_data/pointmaze-layout4', 'Save path.')
 flags.DEFINE_float('noise', 0.2, 'Gaussian action noise level.')
-flags.DEFINE_integer('num_episodes', 1000, 'Number of episodes.')
-flags.DEFINE_integer('max_episode_steps', 1001, 'Maximum number of steps in an episode.')
+flags.DEFINE_integer('num_episodes', 3000, 'Number of episodes.')
+flags.DEFINE_integer('max_episode_steps', 101, 'Maximum number of steps in an episode.')
 
 
 def main(_):

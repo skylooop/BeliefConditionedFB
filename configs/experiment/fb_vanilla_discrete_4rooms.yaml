@@ -1,0 +1,36 @@
+# @package _global_
+
+defaults:
+  - override /env: gridworld/4rooms-vanilla
+  - override /agent: fb
+
+train_steps: 150_000
+log_interval: 10_000
+eval_interval: 30_000
+
+tags: [vanilla-fb, 4rooms, discrete]
+
+agent:
+  lr: 3e-4
+  batch_size: 1024
+
+  # FB Specific
+  z_dim: 75
+  z_mix_ratio: 0.5
+  boltzmann: True
+
+  # F Network
+  f_hidden_dims: [1024, 512, 512]  # Value network hidden dimensions.
+  f_layer_norm: True  # Whether to use layer normalization.
+
+  # B Network
+  b_hidden_dims: [512, 512, 512]  # Value network hidden dimensions.
+  b_layer_norm: True  # Whether to use layer normalization.
+
+  # Whether Dynamics-Adaptive
+  use_context: False
+
+  # MISC
+  discount: 0.99
+  tau: 0.01  # Target network update rate.
+  

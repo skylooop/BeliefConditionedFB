@@ -84,7 +84,7 @@ def random_exploration_fourrooms(env, num_episodes: int, layout_type: int, num_m
         cur_next_observations = []
         done = False
         step = 0
-        while not done and step < env.max_steps:
+        while not done and step < env.unwrapped.max_steps:
             step += 1
             cur_observations.append(np.array(obs, dtype=np.float32))
             action = env.action_space.sample()

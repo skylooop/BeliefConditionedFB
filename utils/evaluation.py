@@ -123,7 +123,7 @@ def evaluate_fourrooms(
     env,
     task_id=None,
     config=None,
-    num_eval_episodes=50,
+    num_eval_episodes=10,
     num_video_episodes=0,
     video_frame_skip=3,
     eval_temperature=0.0,
@@ -153,7 +153,7 @@ def evaluate_fourrooms(
     for i in pbar:
         traj = defaultdict(list)
         should_render = i >= num_eval_episodes
-        observation, info = env.setup_goals(seed=None, task_num=task_id)
+        observation, info = env.unwrapped.setup_goals(seed=None, task_num=task_id)
         goal = info.get("goal_pos", None)
         done = False
         step = 0
@@ -161,12 +161,6 @@ def evaluate_fourrooms(
         latent_z = agent.infer_z(goal)
         while not done:
             action = actor_fn(observations=observation, latent_z=latent_z, temperature=eval_temperature)
-            action = np.array(action)
-            if not config.get('discrete'):
-                if eval_gaussian is not None:
-                    action = np.random.normal(action, eval_gaussian)
-                action = np.clip(action, -1, 1)
-
             next_observation, reward, terminated, truncated, info = env.step(jax.device_get(action.squeeze()))
             done = terminated or truncated
             step += 1

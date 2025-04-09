@@ -78,8 +78,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         ort_loss_offdiag = (cov_b[off_diag] ** 2).mean()
         ort_b_loss = ort_loss_diag + ort_loss_offdiag
         total_loss = fb_loss + ort_b_loss
-        
-        # correct_fb = jnp.argmax(M1, axis=1) == jnp.argmax(I, axis=1)
+
         correct_ort = jnp.argmax(cov_b, axis=-1) == jnp.argmax(I, axis=-1)
         
         return total_loss, {
@@ -317,9 +316,8 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         network_args = {k: v[1] for k, v in network_info.items()}
 
         network_def = ModuleDict(networks)
-        #lr_schedule = optax.linear_schedule(init_value=3e-4, end_value=1e-4, transition_begin=150_000, transition_steps=1_000_000)
         network_tx = optax.chain(optax.clip_by_global_norm(1.0),
-                                 optax.adam(learning_rate=config['lr']))
+                                optax.adam(learning_rate=config['lr']))
         
         network_params = network_def.init(init_rng, **network_args)['params']
         network = TrainState.create(network_def, network_params, tx=network_tx)

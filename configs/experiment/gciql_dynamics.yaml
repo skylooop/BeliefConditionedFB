@@ -14,7 +14,7 @@ tags: [dynamics_gciql, discrete]
 
 agent:
   lr: 3e-4
-  batch_size: 256
+  batch_size: 1024
 
   # GCIQL
   const_std: True
@@ -31,8 +31,8 @@ agent:
   dyn_encoder_warmup_steps: 50000
   n_blocks: 4
   n_heads: 4
-  emb_dim: 72 # 96
-  mlp_dim: 256
+  emb_dim: 96 # 96
+  mlp_dim: 512
   output_dim: 4 # changed
   context_len: 100
   number_of_meta_envs: 5

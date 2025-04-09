@@ -8,6 +8,12 @@ from envs.custom_mazes.motion import VonNeumannMotion
 import gymnasium.spaces as spaces
 import matplotlib.pyplot as plt
 
+from envs.custom_mazes.env_utils import policy_image_fourrooms, value_image_fourrooms
+from functools import partial
+from utils.evaluation import supply_rng
+from IPython.display import clear_output
+import jax
+
 class Maze(BaseMaze):
     def __init__(self, maze_type: str='fourrooms', size: str = 11, **kwargs):
         if maze_type == 'fourrooms':
@@ -176,3 +182,27 @@ class FourRoomsMazeEnv(BaseEnv):
         for x in range(w - 1):
             plt.plot([x + 0.5, x + 0.5], [-0.5, h - 0.5], **grid_kwargs)
         return ax
+
+def visualize_value_image(agent, example_batch, task_num):
+    env = FourRoomsMazeEnv(Maze())
+    env.reset()
+    observation, info = env.setup_goals(seed=None, task_num=task_num)
+    goal = info.get("goal_pos", None)
+    latent_z = jax.device_get(agent.infer_z(goal)[None])
+    N, M = env.maze.size
+    pred_value_img = value_image_fourrooms(env, example_batch, N=N, M=M,
+                                value_fn=partial(agent.predict_q, z=latent_z), goal=goal)
+    return pred_value_img
+
+def visualize_policy(agent, whole_dataset, task_num):
+    env = FourRoomsMazeEnv(Maze())
+    env.reset()
+    observation, info = env.setup_goals(seed=None, task_num=task_num)
+    goal = info.get("goal_pos", None)
+    latent_z = agent.infer_z(goal)
+    start = info.get("start_pos", None)
+    example_batch = whole_dataset.sample(1)
+    pred_policy_img = policy_image_fourrooms(env, example_batch, N=env.maze.size[0], M=env.maze.size[1],
+                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z, temperature=0.0),
+                                                    goal=goal, start=start)
+    return pred_policy_img

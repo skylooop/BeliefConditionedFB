@@ -1,44 +1,49 @@
 # @package _global_
 
 defaults:
-  - override /env: gridworld/gridworld
-  - override /agent: fb
+  - override /env: gridworld/4rooms-dynamics
+  - override /agent: dynamics_fb
 
-train_steps: 1_000_000
-# For debug
-# log_interval: 5_000
-# eval_interval: 10_000
-tags: [fb, discrete]
+train_steps: 400_000
+
+log_interval: 10_000
+eval_interval: 100_000
+
+tags: [dynamics-fb, 4rooms, discrete]
 
 agent:
   lr: 3e-4
-  batch_size: 1024
+  batch_size: 256
 
   # FB Specific
-  z_dim: 150
+  z_dim: 75
   z_mix_ratio: 0.5
   boltzmann: True
+
   # F Network
-  f_hidden_dims: [512, 512, 512]  # Value network hidden dimensions.
+  f_hidden_dims: [1024, 512, 512]  # Value network hidden dimensions.
   f_layer_norm: True  # Whether to use layer normalization.
+
   # B Network
   b_hidden_dims: [512, 512, 512]  # Value network hidden dimensions.
   b_layer_norm: True  # Whether to use layer normalization.
-  number_of_meta_envs: 5
 
-  # Transformer
+  # Whether Dynamics-Adaptive
   use_context: True
-  warmup_steps: 50000
+  number_of_meta_envs: 3
+  dyn_encoder_warmup_steps: 10000
   n_blocks: 4
   n_heads: 4
-  emb_dim: 72 # 72
-  mlp_dim: 256
+  emb_dim: 96 # 72
+  mlp_dim: 512
   output_dim: 4 # changed
   context_len: 100
   use_masked_attention: False
   use_mean_embedding: True
   cosine_schedule: False
-  
+  w_hidden_dims: [256, 256, 256]
+  world_pred_hidden: [256, 256, 256]
+
   # MISC
   discount: 0.99
   tau: 0.01  # Target network update rate.
