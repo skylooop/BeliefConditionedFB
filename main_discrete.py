@@ -1,7 +1,7 @@
 import os
 import sys
 os.environ['MUJOCO_GL']='egl'
-os.environ['CUDA_VISIBLE_DEVICES']='0'
+os.environ['CUDA_VISIBLE_DEVICES']='1'
 
 # import shutup
 # shutup.please()
@@ -59,11 +59,6 @@ def value_image_fourrooms(env, dataset, value_fn, action_fn=None, **kwargs):
     plt.close(fig)
     return image
 
-def value_fn(agent, obs, goal, action, mdp_type=None, dynamics_embedding=None):
-    q1, q2 = agent.network.select('critic')(obs, goal, action, mdp_num=mdp_type, dynamics_embedding=dynamics_embedding)
-    q = jnp.minimum(q1, q2)
-    return q / 0.02
-
 def plot_value_image_grid(env, dataset, value_fn, action_fn, fig=None, ax=None, title=None, **kwargs):
     if fig is None or ax is None:
         fig, ax = plt.subplots()
@@ -74,8 +69,7 @@ def plot_value_image_grid(env, dataset, value_fn, action_fn, fig=None, ax=None, 
 
     for (y, x), value in np.ndenumerate(grid):
         if value == 1 or value == 4:
-            action = action_fn(np.concatenate([[x], [y]], -1)).squeeze()
-            grid[y, x] = jax.device_get(value_fn(np.concatenate([[x], [y]], -1), goal, action))
+            grid[y, x] = jax.device_get(value_fn(np.concatenate([[x], [y]], -1)).max(-1)[0])
             
     divider = make_axes_locatable(ax)
     cax = divider.append_axes('right', size='5%', pad=0.05)
@@ -86,33 +80,24 @@ def plot_value_image_grid(env, dataset, value_fn, action_fn, fig=None, ax=None, 
         ax.scatter(goal[0], goal[1], s=80, c='black', marker='*')
     return fig, ax
 
-def visualize_value_image(env, config, agent, key, example_batch, layout_type):
-    mdp_type = np.zeros((config['agent']['number_of_meta_envs'], ))
-    if mdp_type is not None:
-        if layout_type == 0:
-            mdp_type[0] = 1
-        elif layout_type == 1:
-            mdp_type[1] = 1
-        else:
-            mdp_type[2] = 1
-    
+def visualize_value_image_doors(env, agent, key, example_batch, layout_type=1):
     env._gen_grid = partial(env._gen_grid, layout_type=layout_type)
     env = MinigridWrapper(env)
     dynamics_embedding=None
     obs, info = env.reset()
     goal = info.get("goal_pos", None)
     
-    if config['agent']['use_context']:
-        dataset_inference, env = random_exploration(env, num_episodes=1, layout_type=layout_type, num_mdp=config['agent']['number_of_meta_envs'])
-        dynamics_embedding_mean, dynamics_mean_std = agent.network.select('dynamic_transformer')(dataset_inference['observations'][None], dataset_inference['actions'][None, :, None],
-                                                                                    dataset_inference['next_observations'][None], train=False, return_embedding=True)
-        dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=key, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_mean_std)
-        dynamics_embedding = dynamics_embedding.squeeze()
-        mdp_type=None
-        
+    dataset_inference, env = random_exploration(env, num_episodes=1, layout_type=layout_type, num_mdp=5) # 5 for unseen
+    dynamics_embedding_mean, dynamics_mean_std = agent.network.select('dynamic_transformer')(dataset_inference['observations'][None], dataset_inference['actions'][None, :, None],
+                                                                                dataset_inference['next_observations'][None], train=False, return_embedding=True)
+    dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=key, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_mean_std)
+    dynamics_embedding = dynamics_embedding.squeeze()
+    mdp_type=None
+    latent_z = jax.device_get(agent.infer_z(goal, mdp_num=mdp_type, dynamics_embedding=dynamics_embedding)[None])
     pred_value_img = value_image_fourrooms(env, example_batch,
-                                value_fn=partial(value_fn, agent, mdp_type=mdp_type, dynamics_embedding=dynamics_embedding), action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
-                                                                    goals=goal, mdp_type=mdp_type, temperature=0.0, dynamics_embedding=dynamics_embedding), goal=goal)
+                                value_fn=partial(agent.predict_q, z=latent_z, mdp_num=mdp_type[None] if mdp_type is not None else None,
+                                                dynamics_embedding=dynamics_embedding[None]),
+                                action_fn=None, goal=goal)
     return pred_value_img
 
 def get_canvas_image(canvas):
@@ -130,7 +115,7 @@ def policy_image_grid(env, dataset, action_fn=None, **kwargs):
 
 def plot_policy(env, dataset, fig=None, ax=None, title=None, action_fn=None, **kwargs):
     action_names = [
-            r'$\leftarrow$', r'$\rightarrow$', r'$\uparrow$', r'$\downarrow$' #'↑', '↓', '←', '→'#
+            r'$\leftarrow$', r'$\rightarrow$', r'$\uparrow$', r'$\downarrow$'
         ]
     if fig is None or ax is None:
         fig, ax = plt.subplots()
@@ -153,33 +138,25 @@ def plot_policy(env, dataset, fig=None, ax=None, title=None, action_fn=None, **k
         
     return fig, ax
 
-def visualize_policy_image(env, agent, key, example_batch, config, layout_type):
-    mdp_type = np.zeros((config['agent']['number_of_meta_envs'], )) if config['agent']['number_of_meta_envs'] > 1 else None
-    if mdp_type is not None:
-        if layout_type == 0:
-            mdp_type[0] = 1
-        elif layout_type == 1:
-            mdp_type[1] = 1
-        else:
-            mdp_type[2] = 1
-    
+def visualize_policy_image_doors(env, agent, key, example_batch, layout_type):
     env._gen_grid = partial(env._gen_grid, layout_type=layout_type)
     env = MinigridWrapper(env)
     dynamics_embedding=None
     obs, info = env.reset()
     goal = info.get("goal_pos", None)
     
-    if config['agent']['use_context']:
-        dataset_inference, env = random_exploration(env, num_episodes=1, layout_type=layout_type, num_mdp=config['agent']['number_of_meta_envs'])
-        dynamics_embedding_mean, dynamics_mean_std = agent.network.select('dynamic_transformer')(dataset_inference['observations'][None], dataset_inference['actions'][None,:,None],
-                                                                                    dataset_inference['next_observations'][None], train=False, return_embedding=True)
-        dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=key, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_mean_std)
-        dynamics_embedding=dynamics_embedding.squeeze()
-        mdp_type=None
+    dataset_inference, env = random_exploration(env, num_episodes=1, layout_type=layout_type, num_mdp=3)
+    dynamics_embedding_mean, dynamics_mean_std = agent.network.select('dynamic_transformer')(dataset_inference['observations'][None], dataset_inference['actions'][None,:,None],
+                                                                                dataset_inference['next_observations'][None], train=False, return_embedding=True)
+    dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=key, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_mean_std)
+    dynamics_embedding=dynamics_embedding.squeeze()
+    mdp_type=None
         
+    latent_z = agent.infer_z(goal, mdp_num=mdp_type, dynamics_embedding=dynamics_embedding)
     pred_policy_img = policy_image_grid(env, example_batch,
-                                                    action_fn=partial(supply_rng(agent.sample_actions, rng=jax.random.PRNGKey(np.random.randint(0, 2**32))),
-                                                                    goals=goal, mdp_type=mdp_type, dynamics_embedding=dynamics_embedding, temperature=0.0),
+                                                    action_fn=partial(supply_rng(agent.sample_actions,
+                                                                                rng=jax.random.PRNGKey(np.random.randint(0, 2**32))), latent_z=latent_z,
+                                                                    mdp_num=mdp_type[None] if mdp_type is not None else None, dynamics_embedding=dynamics_embedding[None], temperature=0.0),
                                                     goal=goal)
     return pred_policy_img
 
@@ -200,7 +177,8 @@ def main(cfg: DictConfig):
     env, eval_env, train_dataset, val_dataset = make_env_and_datasets(dataset_name=config['env']['env_name'],
                                                                     frame_stack=config['agent']['frame_stack'],
                                                                     action_clip_eps=1e-5 if not config['env']['discrete'] else None,
-                                                                    context_len=config['agent']['context_len'] if config['agent']['use_context'] else None)
+                                                                    context_len=config['agent']['context_len'] if config['agent']['use_context'] else None,
+                                                                    number_of_meta_envs=config['agent']['number_of_meta_envs'] if config['agent']['use_context'] else None)
     dataset_class = {
         'GCDataset': GCDataset,
     }[config['agent']['dataset_class']]
@@ -225,8 +203,8 @@ def main(cfg: DictConfig):
     eval_logger = CsvLogger(os.path.join(config['save_dir'], 'eval.csv'))
     first_time = time.time()
     last_time = time.time()
-    layout_types = [0, 1, 2]
     
+    # MINIMAL 3 ENVS FOR VISUALIZATION
     if config['env']['env_name'] == "doors-dynamics":
         plot_layouts = []
         for i in range(config['agent']['number_of_meta_envs']):
@@ -273,23 +251,54 @@ def main(cfg: DictConfig):
             eval_metrics = {}
             overall_metrics = defaultdict(list)
             
-            if 'doors' in config['env']['env_name']:
-                if 'gciql' in config['agent']['agent_name']:
-                    for layout_type in tqdm(layout_types, leave=False, position=1, colour='blue'):
-                        if config['agent']['use_context']:
-                            pred_policy_img = visualize_policy_image(env, agent, key, example_batch, config, layout_type=layout_type)
-                            pred_value_img = visualize_value_image(env, config, agent, key, example_batch, layout_type=layout_type)
+            # if 'doors' in config['env']['env_name']:
+            #     if 'gciql' in config['agent']['agent_name']:
+            #         for layout_type in tqdm(layout_types, leave=False, position=1, colour='blue'):
+            #             if config['agent']['use_context']:
+            #                 pred_policy_img = visualize_policy_image(env, agent, key, example_batch, config, layout_type=layout_type)
+            #                 pred_value_img = visualize_value_image(env, config, agent, key, example_batch, layout_type=layout_type)
                             
-                        eval_metrics[f'draw_Q/draw_value_task_{layout_type}'] = wandb.Image(pred_value_img)
-                        eval_metrics[f'draw_policy/draw_policy_task_{layout_type}'] = wandb.Image(pred_policy_img)
+            #             eval_metrics[f'draw_Q/draw_value_task_{layout_type}'] = wandb.Image(pred_value_img)
+            #             eval_metrics[f'draw_policy/draw_policy_task_{layout_type}'] = wandb.Image(pred_policy_img)
                         
-                    fig, ax = plt.subplots(figsize=(15, 10))
-                    dynamics_embedding_mean, std = agent.network.select('dynamic_transformer')(plot_layouts['traj_states'], plot_layouts['traj_actions'],
-                                                                plot_layouts['traj_next_states'], train=False)
-                    dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=key, shape=dynamics_embedding_mean.shape) * jnp.exp(std)
-                    tsne = TSNE(random_state=42, perplexity=30).fit_transform(dynamics_embedding)
-                    ax.scatter(tsne[:, 0], tsne[:, 1], color=colors)
+            #         fig, ax = plt.subplots(figsize=(15, 10))
+            #         dynamics_embedding_mean, std = agent.network.select('dynamic_transformer')(plot_layouts['traj_states'], plot_layouts['traj_actions'],
+            #                                                     plot_layouts['traj_next_states'], train=False)
+            #         dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=key, shape=dynamics_embedding_mean.shape) * jnp.exp(std)
+            #         tsne = TSNE(random_state=42, perplexity=30).fit_transform(dynamics_embedding)
+            #         ax.scatter(tsne[:, 0], tsne[:, 1], color=colors)
             
+            if 'doors-dynamics' in config['env']['env_name']:
+                from envs.minigrid.env_utils import plot_image_pca_tsne
+                from envs.minigrid.doors_grid import DynamicsGeneralization_Doors
+                
+                dynamics_embedding_mean, std = agent.network.select('dynamic_transformer')(plot_layouts['traj_states'], plot_layouts['traj_actions'],
+                                                                                plot_layouts['traj_next_states'], train=False)
+                dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=key, shape=dynamics_embedding_mean.shape) * jnp.exp(std)
+                tsne_pca = plot_image_pca_tsne(dynamics_embedding, colors)
+                eval_metrics[f'TSNE_PCA'] = wandb.Image(tsne_pca)
+                
+                env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False,
+                                    max_steps=config['agent']['context_len'], task_num=step % 3)
+                pred_policy_img = visualize_policy_image_doors(env, agent, key, example_batch, layout_type=0)
+                pred_value_img = visualize_value_image_doors(env, agent, key, example_batch, layout_type=0)
+                eval_metrics[f'draw_Q/draw_value_task_{step % 3}_layout_0'] = wandb.Image(pred_value_img)
+                eval_metrics[f'draw_policy/draw_policy_task_{step % 3}_layout_0'] = wandb.Image(pred_policy_img)
+                
+                env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False,
+                                    max_steps=config['agent']['context_len'], task_num=(step+1) % 3)
+                pred_policy_img = visualize_policy_image_doors(env, agent, key, example_batch, layout_type=1)
+                pred_value_img = visualize_value_image_doors(env, agent, key, example_batch, layout_type=1)
+                eval_metrics[f'draw_Q/draw_value_task_{step % 3}_layout_1'] = wandb.Image(pred_value_img)
+                eval_metrics[f'draw_policy/draw_policy_task_{step % 3}_layout_1'] = wandb.Image(pred_policy_img)
+                
+                env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False,
+                                    max_steps=config['agent']['context_len'], task_num=step % 3)
+                pred_policy_img = visualize_policy_image_doors(env, agent, key, example_batch, layout_type=2)
+                pred_value_img = visualize_value_image_doors(env, agent, key, example_batch, layout_type=2)
+                eval_metrics[f'draw_Q/draw_value_task_{step % 3}_layout_2'] = wandb.Image(pred_value_img)
+                eval_metrics[f'draw_policy/draw_policy_task_{step % 3}_layout_2'] = wandb.Image(pred_policy_img)
+                
             if 'fourrooms-dynamics' in config['env']['env_name']:
                 from envs.custom_mazes.dynamics_utils import visualize_policy, visualize_value_image
                 from envs.custom_mazes.darkroom import FourRoomsMazeEnv, Maze

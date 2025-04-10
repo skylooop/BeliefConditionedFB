@@ -19,7 +19,7 @@ from tqdm.auto import tqdm
 plt.style.use(['seaborn-v0_8-colorblind'])
 
 def one_hot(a, num_classes):
-  return np.squeeze(np.eye(num_classes)[a.reshape(-1)])
+    return np.squeeze(np.eye(num_classes)[a.reshape(-1)])
 
 def convert_trajs_to_dict(trajs, pad_value=-1.0):
     """Convert list of trajectory dicts to a single dict with stacked arrays.
@@ -348,26 +348,23 @@ def plot_policy(env, dataset, fig=None, ax=None, title=None, action_fn=None, **k
         
     return fig, ax
 
-def plot_pca(embs, fig, ax):
+def plot_pca_tsne(embs, colors, fig, ax):
     if fig is None or ax is None:
         fig, ax = plt.subplots()
     # Make PCA & TSNE
     pca = PCA()
     tsne = TSNE(random_state=42)
-    cmap = LinearSegmentedColormap.from_list('recent_to_old', ['cyan', 'black'])
-    indices = np.linspace(0, 1, len(embs))  # Normalized indices for colormap
-    colors = cmap(indices)
     for idx, (reduction, name) in enumerate(zip([pca, tsne], ['PCA', 'TSNE'])):
         ax = fig.add_subplot(1, 2, idx + 1)
         projected = reduction.fit_transform(embs)
-        ax.scatter(projected[:, 0], projected[:, 1], c = colors)
+        ax.scatter(projected[:, 0], projected[:, 1], c=colors)
         ax.set_title(f"{name}")
     plt.tight_layout()
 
-def plot_image_pcas(embs):
-    fig = plt.figure(tight_layout=True, figsize=(20, 10))
+def plot_image_pca_tsne(embs, colors):
+    fig = plt.figure(tight_layout=True, figsize=(20, 15))
     canvas = FigureCanvas(fig)
-    plot_pca(embs, fig=fig, ax=plt.gca())
+    plot_pca_tsne(embs, colors, fig=fig, ax=plt.gca())
     image = get_canvas_image(canvas)
     plt.close(fig)
     return image

@@ -390,7 +390,7 @@ class FValueDiscrete(nn.Module):
     def setup(self):
         forward_mlp_module = ensemblize(MLP, 2)
         self.forward_map = forward_mlp_module((*self.f_hidden_dims, self.latent_z_dim * self.action_dim), activate_final=False,
-                                      layer_norm=self.f_layer_norm)
+                                    layer_norm=self.f_layer_norm)
         
     def __call__(self, observations, latent_z, context_z=None, mdp_num=None, dynamics_embedding=None):
         input = [observations, latent_z]

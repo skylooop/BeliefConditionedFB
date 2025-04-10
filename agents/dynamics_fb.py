@@ -143,7 +143,10 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=self.rng, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_embedding_std)
         dynamics_embedding = jnp.tile(dynamics_embedding[:, None], reps=(1, batch['traj_states'].shape[1], 1))
         next_state_pred = self.network.select('next_state_pred')(batch['traj_states'], batch['traj_actions'], dynamics_embedding, params=grad_params)
-        loss = optax.squared_error(next_state_pred, batch['traj_next_states']).mean()
+        reward_pred = self.network.select('reward_pred')(batch['traj_states'], dynamics_embedding)
+        reward_loss = optax.squared_error(reward_pred.mean(1).squeeze(1), batch['rewards']).mean()
+        next_state_loss = optax.squared_error(next_state_pred, batch['traj_next_states']).mean()
+        loss = reward_loss + next_state_loss
         return loss, {"context_embedding_loss": loss}
     
     def total_loss(self, batch, latent_z, grad_params, train_context_embedding, rng=None):
@@ -158,7 +161,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         dynamics_embedding_mean, dynamics_embedding_log_std = self.network.select('dynamic_transformer')(batch['traj_states'], batch['traj_actions'],
                                                                                 batch['traj_next_states'], train=False)
         dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=self.rng, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_embedding_log_std)
-        
+        dynamics_embedding = jax.lax.stop_gradient(dynamics_embedding)
         if not train_context_embedding:
             fb_loss, fb_info = self.fb_loss(batch, latent_z, dynamics_embedding, grad_params, fb_recon_rng)
             for k, v in fb_info.items():
@@ -349,9 +352,10 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             network_info.update({"actor": (actor_def, (ex_observations, latent_z, ))})
         
         if config['use_context']:
-            from utils.transformer_nets import DynamicsTransformer, NextStatePrediction
+            from utils.transformer_nets import DynamicsTransformer, NextStatePrediction, RewardPrediction
 
             next_state_pred_def = NextStatePrediction(hidden_dims=config['world_pred_hidden'], out_dim=ex_observations.shape[-1])
+            reward_pred_def = RewardPrediction(hidden_dims=[128, 128], out_dim=1)
             dynamics_def = DynamicsTransformer(
                 num_layers=config['n_blocks'],
                 num_heads=config['n_heads'],
@@ -372,7 +376,10 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
                 next_state_pred=(next_state_pred_def, (jnp.zeros((1, 1, ex_observations.shape[-1])), jnp.zeros((1, 1, ex_actions.shape[-1])),
                                                     jnp.zeros((1, 1, config['output_dim']))))
             )
-        
+            network_info.update(
+                reward_pred = (reward_pred_def, (jnp.zeros((1, 1, ex_observations.shape[-1])), jnp.zeros((1, 1, config['output_dim']))))
+            )
+            
         networks = {k: v[0] for k, v in network_info.items()}
         network_args = {k: v[1] for k, v in network_info.items()}
 

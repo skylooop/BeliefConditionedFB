@@ -94,7 +94,7 @@ def normalize_data(input_data):
     normalized_observations[:, 1] = (input_data[:, 1] - y_min) / (y_max - y_min)  # Normalize 
     return normalized_observations
     
-def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5, context_len=None):
+def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5, context_len=None, number_of_meta_envs=None):
     """Make OGBench environment and datasets.
 
     Args:
@@ -124,7 +124,7 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5, 
         eval_env = FourRoomsMazeEnv(Maze(maze_type='fourrooms_random_layouts'))
         env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
         eval_env = EpisodeMonitor(eval_env, filter_regexes=['.*privileged.*', '.*proprio.*'])
-        train_dataset = np.load("aux_data/fourrooms_meta3_data.npy", allow_pickle=True)[()] # number means number of training layouts
+        train_dataset = np.load(f"aux_data/fourrooms_meta{number_of_meta_envs}_data.npy", allow_pickle=True)[()] # number means number of training layouts
         train_dataset = Dataset.create(**train_dataset)
         val_dataset = train_dataset
         
@@ -150,18 +150,13 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5, 
         train_dataset = Dataset.create(**train_dataset)
         val_dataset = train_dataset
     
-    if 'doors' in dataset_name:
+    if 'doors-dynamics' in dataset_name:
         from envs.minigrid.doors_grid import DynamicsGeneralization_Doors, MinigridWrapper
         
         env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=context_len)
         eval_env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=context_len)
-
-        if 'context' in dataset_name:
-            train_dataset = np.load(f"/home/m_bobrin/ZeroShotRL/aux_data/gciql_dyn_doors.npy", allow_pickle=True).item() 
-        else:
-            train_dataset = np.load(f"/home/m_bobrin/ZeroShotRL/aux_data/iql_door_data_0.npy", allow_pickle=True).item() # layout_type
-        
-        print(f"Dataset shapes: {jax.tree.map(lambda x: x.shape, train_dataset)}")
+        env = MinigridWrapper(env)
+        train_dataset = np.load(f"/home/m_bobrin/ZeroShotRL/aux_data/doors_meta{number_of_meta_envs}_data.npy", allow_pickle=True).item() 
         train_dataset = Dataset.create(**train_dataset)
         val_dataset = train_dataset
     

@@ -171,6 +171,17 @@ class NextStatePrediction(nn.Module):
         pred_next_context = self.state_predictor(jnp.concatenate([states, actions, dynamics_embedding], -1))
         return pred_next_context
 
+class RewardPrediction(nn.Module):
+    hidden_dims: Sequence[int]
+    out_dim: int
+    
+    def setup(self):
+        self.reward_predictor = MLP((*self.hidden_dims, self.out_dim))
+        
+    def __call__(self, states, dynamics_embedding):
+        pred_rewards = self.reward_predictor(jnp.concatenate([states, dynamics_embedding], axis=-1)) #jnp.concatenate([states, actions, dynamics_embedding], -1))
+        return pred_rewards
+
 class LinearProbing(nn.Module):
     hidden_dims: Sequence[int]
     out_dim: int

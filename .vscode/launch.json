@@ -11,7 +11,7 @@
             "program": "/home/m_bobrin/ZeroShotRL/main_discrete.py",
             "console": "integratedTerminal",
             "args": [
-                "experiment=fb_dynamics_discrete"
+                "experiment=fb_dynamics_discrete_doors"
             ]
         }
     ]
