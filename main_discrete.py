@@ -1,7 +1,7 @@
 import os
 import sys
 os.environ['MUJOCO_GL']='egl'
-os.environ['CUDA_VISIBLE_DEVICES']='1'
+os.environ['CUDA_VISIBLE_DEVICES']='0'
 
 # import shutup
 # shutup.please()
@@ -23,6 +23,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 plt.style.use(['seaborn-v0_8-colorblind', 'seaborn-v0_8-notebook'])
 
+import matplotlib
 from tqdm.auto import tqdm
 import wandb
 from absl import app, flags
@@ -210,22 +211,22 @@ def main(cfg: DictConfig):
         for i in range(config['agent']['number_of_meta_envs']):
             cur_layout = train_dataset.sample(512, layout_type=i, context_length=config['agent']['context_len'])[1]
             plot_layouts.append(cur_layout)
-        
+            
         plot_layouts = functools.reduce(concatenate_dicts, plot_layouts)
 
-        first_layout_indxs = jnp.where(jnp.any((plot_layouts['traj_states'][:, :, 0] == 3.0) & (plot_layouts['traj_states'][:, :, 1] == 6.0), 1))[0]
-        first_layout_trajs = jax.tree_util.tree_map(lambda arr: arr[first_layout_indxs], plot_layouts)
-
-        sec_layout_indxs = jnp.where(jnp.any((plot_layouts['traj_states'][:, :, 0] == 3.0) & (plot_layouts['traj_states'][:, :, 1] == 2.0), 1))[0]
-        sec_layout_trajs = jax.tree_util.tree_map(lambda arr: arr[sec_layout_indxs], plot_layouts)
-
-        third_layout_indxs = jnp.where(jnp.any((plot_layouts['traj_states'][:, :, 0] == 3.0) & (plot_layouts['traj_states'][:, :, 1] == 1.0), 1))[0]
-        third_layout_trajs = jax.tree_util.tree_map(lambda arr: arr[third_layout_indxs], plot_layouts)
-
-        plot_layouts = jax.tree.map(lambda x, y, z: jnp.concatenate([x, y, z]), first_layout_trajs, sec_layout_trajs, third_layout_trajs)
-        colors = ['blue'] * first_layout_trajs['traj_actions'].shape[0] + ['red'] * sec_layout_trajs['traj_actions'].shape[0] +\
-            ['orange'] * third_layout_trajs['traj_actions'].shape[0]
-            
+        cmap = matplotlib.colormaps['tab10']
+        c = cmap(np.linspace(0, 1, 7)) # NUMBER OF POSSIBLE FIRST DOOR LOCATIONS
+        layouts_for_embeddings = []
+        colors = []
+        for i in range(1, 7):
+            cur_layout_indx = jnp.where(jnp.any((plot_layouts['traj_states'][:, :, 0] == 3.0) & (plot_layouts['traj_states'][:, :, 1] == i), 1))[0]
+            cur_layout_traj = jax.tree_util.tree_map(lambda arr: arr[cur_layout_indx], plot_layouts)
+            if len(cur_layout_indx) > 1:
+                layouts_for_embeddings.append(cur_layout_traj)
+                colors.append([c[i]] * cur_layout_traj['traj_actions'].shape[0])
+        plot_layouts = functools.reduce(concatenate_dicts, layouts_for_embeddings)
+        colors = np.concatenate(colors)
+        
     pbar = tqdm(range(1, config['train_steps'] + 1), colour='green', dynamic_ncols=True, position=0, leave=True)
     for step in pbar:
         key = jax.random.fold_in(key, step)

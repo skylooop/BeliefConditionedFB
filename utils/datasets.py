@@ -202,17 +202,18 @@ class GCDataset:
                 stacked_observations = self.get_stacked_observations(np.arange(self.size))
                 self.dataset = Dataset(self.dataset.copy(dict(observations=stacked_observations)))
 
-    def filter_by_layout(self, layout_label):
+    def filter_by_layout(self, layout_label, layout_number=None):
         """Filter the dataset to only include transitions from the specified layout."""
         # Get indices corresponding to the specified layout
-        layout_mask = jnp.all(self.dataset['layout_type'] == jax.nn.one_hot(jnp.array([layout_label]), self.config['number_of_meta_envs']), axis=-1)
+        layout_mask = jnp.all(self.dataset['layout_type'] == jax.nn.one_hot(jnp.array([layout_label]),
+                                                                        self.config['number_of_meta_envs'] if layout_number is None else layout_number), axis=-1)
         filtered_idxs = np.nonzero(layout_mask)[0]
 
         # Create a new dataset containing only the filtered indices
         filtered_data = self.dataset.get_subset(filtered_idxs)
         return Dataset.create(**filtered_data)
         
-    def sample(self, batch_size: int, idxs=None, evaluation=False, layout_type=None, context_length=None):
+    def sample(self, batch_size: int, idxs=None, evaluation=False, layout_type=None, context_length=None, layout_number=None):
         """Sample a batch of transitions with goals.
 
         This method samples a batch of transitions with goals (value_goals and actor_goals) from the dataset. They are
@@ -225,7 +226,7 @@ class GCDataset:
             evaluation: Whether to sample for evaluation. If True, image augmentation is not applied.
         """
         if layout_type is not None:
-            filtered_dataset = self.filter_by_layout(layout_type)
+            filtered_dataset = self.filter_by_layout(layout_type, layout_number)
         else:
             filtered_dataset = self.dataset
 

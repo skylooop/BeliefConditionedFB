@@ -12,11 +12,11 @@ eval_interval: 20_000
 tags: [dynamics-fb, doors, discrete]
 
 agent:
-  lr: 1e-4
-  batch_size: 256
+  lr: 3e-4
+  batch_size: 512
 
   # FB Specific
-  z_dim: 150
+  z_dim: 100
   z_mix_ratio: 0.5
   boltzmann: True
 
@@ -29,21 +29,21 @@ agent:
   b_layer_norm: True  # Whether to use layer normalization.
 
   # Whether Dynamics-Adaptive
-  number_of_meta_envs: 10
+  number_of_meta_envs: 3
   use_context: True
-  dyn_encoder_warmup_steps: 60000
+  dyn_encoder_warmup_steps: 20000
   n_blocks: 4
-  n_heads: 8
+  n_heads: 4
   emb_dim: 72
-  mlp_dim: 256
+  mlp_dim: 512
   output_dim: 4
   context_len: 100
-  world_pred_hidden: [128, 128, 128]
+  world_pred_hidden: [256, 256, 256]
   use_masked_attention: False
   use_mean_embedding: True
   cosine_schedule: False
 
   # MISC
-  discount: 0.98
+  discount: 0.99
   tau: 0.01  # Target network update rate.
   

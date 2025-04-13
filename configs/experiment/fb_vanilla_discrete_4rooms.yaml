@@ -15,12 +15,12 @@ agent:
   batch_size: 1024
 
   # FB Specific
-  z_dim: 75
+  z_dim: 100
   z_mix_ratio: 0.5
   boltzmann: True
 
   # F Network
-  f_hidden_dims: [1024, 512, 512]  # Value network hidden dimensions.
+  f_hidden_dims: [1024, 512, 512, 512]  # Value network hidden dimensions.
   f_layer_norm: True  # Whether to use layer normalization.
 
   # B Network

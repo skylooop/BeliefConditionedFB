@@ -3,7 +3,6 @@ from typing import Any, Callable, Optional, Tuple, Type
 import flax.linen as nn
 import jax.numpy as jnp
 from typing import *
-import distrax
 
 Array = Any
 PRNGKey = Any
@@ -131,7 +130,6 @@ class Encoder1DBlock(nn.Module):
         x = nn.LayerNorm(dtype=self.dtype)(inputs)
         x = nn.MultiHeadDotProductAttention(
             dtype=self.dtype,
-            kernel_init=nn.initializers.xavier_uniform(),
             broadcast_dropout=False,
             deterministic=deterministic,
             dropout_rate=self.attention_dropout_rate,
@@ -140,7 +138,6 @@ class Encoder1DBlock(nn.Module):
         x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=deterministic)
         x = x + inputs
 
-        # MLP block. This does NOT change the embedding dimension!
         y = nn.LayerNorm(dtype=self.dtype)(x)
         y = MlpBlock(mlp_dim=self.mlp_dim, dtype=self.dtype, dropout_rate=self.dropout_rate)(y, deterministic=deterministic)
 

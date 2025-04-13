@@ -80,6 +80,20 @@ class LengthNormalize(nn.Module):
     def __call__(self, x):
         return x / jnp.linalg.norm(x, axis=-1, keepdims=True) * jnp.sqrt(x.shape[-1])
 
+class AnchorProjector(nn.Module):
+    latent_z_dim: int
+    b_hidden_dims: tuple
+    
+    @nn.compact
+    def __call__(self, dynamics_embedding):
+        x = dynamics_embedding
+        for dim in self.b_hidden_dims:
+            x = nn.Dense(dim)(x)
+            x = nn.LayerNorm()(x)
+            x = nn.swish(x)  # Better activation than ReLU
+        x = nn.Dense(self.latent_z_dim)(x)
+        # q, _ = jnp.linalg.qr(x[None, :], mode='reduced')
+        return x #q.squeeze()
 
 class Param(nn.Module):
     """Scalar parameter module."""
@@ -391,6 +405,7 @@ class FValueDiscrete(nn.Module):
         forward_mlp_module = ensemblize(MLP, 2)
         self.forward_map = forward_mlp_module((*self.f_hidden_dims, self.latent_z_dim * self.action_dim), activate_final=False,
                                     layer_norm=self.f_layer_norm)
+        self.anchor_projection = nn.Dense(features=self.latent_z_dim)
         
     def __call__(self, observations, latent_z, context_z=None, mdp_num=None, dynamics_embedding=None):
         input = [observations, latent_z]
@@ -479,9 +494,9 @@ class FBActor(nn.Module):
     
     def setup(self):
         self.forward_preprocessor_s = MLP((*self.actor_preprocessor_hidden_dims, ),
-                                           activate_final=self.actor_preprocessor_activate_final, layer_norm=self.actor_preprocessor_layer_norm)
+                                        activate_final=self.actor_preprocessor_activate_final, layer_norm=self.actor_preprocessor_layer_norm)
         self.forward_preprocessor_sz = MLP((*self.actor_preprocessor_hidden_dims, ),
-                                           activate_final=self.actor_preprocessor_activate_final, layer_norm=self.actor_preprocessor_layer_norm)
+                                        activate_final=self.actor_preprocessor_activate_final, layer_norm=self.actor_preprocessor_layer_norm)
         
         self.actor_net = MLP(self.hidden_dims, activate_final=True, layer_norm=False)
         self.mean_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
@@ -1122,12 +1137,12 @@ class DynamicsTransformer(nn.Module):
         self.classification_head = MLP([512, 512, self.num_layouts])#nn.Dense(self.num_layouts)
         
     def __call__(self,
-                 states: Float[Array, "bs context_len dim"],
-                 actions: Float[Array, "bs context_len dim"],
-                 next_states: Float[Array, "bs context_len dim"],
-                 layout_type=None,
-                 predict_type: bool = False,
-                 return_last_layer: bool = False):
+                states: Float[Array, "bs context_len dim"],
+                actions: Float[Array, "bs context_len dim"],
+                next_states: Float[Array, "bs context_len dim"],
+                layout_type=None,
+                predict_type: bool = False,
+                return_last_layer: bool = False):
         
         assert states.ndim == 3
         assert states.shape[-1] == self.h_dim
