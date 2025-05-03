@@ -4,7 +4,7 @@ defaults:
   - override /env: gridworld/4rooms-dynamics
   - override /agent: dynamics_fb
 
-train_steps: 300_001
+train_steps: 200_001
 
 log_interval: 20_000
 eval_interval: 100_000
@@ -30,7 +30,7 @@ agent:
 
   # Whether Dynamics-Adaptive
   use_context: True
-  number_of_meta_envs: 20
+  number_of_meta_envs: 50
   dyn_encoder_warmup_steps: 80000
   n_blocks: 6
   n_heads: 6
