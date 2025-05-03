@@ -10,6 +10,7 @@ outputs/
 *.so
 aux_data/
 *.npy
+/home/m_bobrin/ZeroShotRL/aux_data
 # Distribution / packaging
 .Python
 build/
