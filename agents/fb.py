@@ -41,7 +41,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             next_Q = jnp.minimum(next_Q1, next_Q2)
             
             if self.config['boltzmann']:
-                pi = jax.nn.softmax(next_Q / 200, axis=-1)
+                pi = jax.nn.softmax(next_Q / 350, axis=-1)
                 target_F1 = jnp.einsum("sa, sda -> sd", pi, target_F1) # batch x z_dim
                 target_F2 = jnp.einsum("sa, sda -> sd", pi, target_F2)
                 next_Q = jnp.einsum("sa, sa -> s", pi, next_Q)

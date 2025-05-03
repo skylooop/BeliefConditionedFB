@@ -8,10 +8,10 @@
             "name": "zeroshto",
             "type": "debugpy",
             "request": "launch",
-            "program": "/home/m_bobrin/ZeroShotRL/main_discrete.py",
+            "program": "/home/m_bobrin/ZeroShotRL/main_dynamics_discrete.py",
             "console": "integratedTerminal",
             "args": [
-                "experiment=fb_dynamics_discrete_doors"
+                "experiment=fb_dynamics_discrete_4rooms"
             ]
         }
     ]

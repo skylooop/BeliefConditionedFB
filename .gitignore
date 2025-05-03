@@ -8,7 +8,8 @@ outputs/
 *.csv
 # C extensions
 *.so
-
+aux_data/
+*.npy
 # Distribution / packaging
 .Python
 build/

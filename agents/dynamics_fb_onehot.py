@@ -36,8 +36,8 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             M1 = F1 @ B.T
             M2 = F2 @ B.T
         else:
-            target_F1, target_F2 = self.network.select('target_f_value')(batch['next_observations'], z_latent, mdp_num=None,
-                                                                        dynamics_embedding=dynamics_embedding)
+            target_F1, target_F2 = self.network.select('target_f_value')(batch['next_observations'], z_latent,
+                                                                        mdp_num=batch['layout_type'], dynamics_embedding=None)
             next_Q1 = jnp.einsum('sda, sd -> sa', target_F1, z_latent)
             next_Q2 = jnp.einsum('sda, sd -> sa', target_F2, z_latent)
             next_Q = jnp.minimum(next_Q1, next_Q2)
@@ -55,17 +55,17 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
                 next_Q = next_Q.max(-1)
                 
             target_B = self.network.select('target_b_value')(batch['next_observations'],
-                                                            mdp_num=None, dynamics_embedding=None)
+                                                            mdp_num=None, dynamics_embedding=None) # batch['layout_type']
             target_M1 = target_F1 @ target_B.T
             target_M2 = target_F2 @ target_B.T
             target_M = jnp.minimum(target_M1, target_M2)
             
             cur_idx = batch['actions'][..., None].repeat(repeats=z_latent.shape[-1], axis=1).astype(jnp.int16)[:, :, None]
             F1, F2 = self.network.select('f_value')(batch['observations'], z_latent,
-                                                    mdp_num=None, dynamics_embedding=dynamics_embedding, params=grad_params)
+                                                    mdp_num=batch['layout_type'], dynamics_embedding=None, params=grad_params)
             F1 = jnp.take_along_axis(F1, cur_idx, axis=-1).squeeze()
             F2 = jnp.take_along_axis(F2, cur_idx, axis=-1).squeeze()
-            B = self.network.select('b_value')(batch['next_observations'], mdp_num=None, dynamics_embedding=None, params=grad_params)
+            B = self.network.select('b_value')(batch['next_observations'], mdp_num=None, dynamics_embedding=None, params=grad_params) # batch['layout_type']
             M1 = F1 @ B.T
             M2 = F2 @ B.T
         
@@ -86,26 +86,14 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         correct_ort = jnp.argmax(cov_b, axis=-1) == jnp.argmax(I, axis=-1)
         
         return total_loss, {
-            #"contrastive_fb_loss": fb_loss, 
             "fb_loss": total_loss,
             "z_norm": jnp.linalg.norm(z_latent, axis=-1).mean(),
             "correct_b_ort": correct_ort.sum(),
             # ORTHONORMALITY METRICS
             "mean_diag": jnp.diag(cov_b).mean(), # should increase
             "mean_off_diag": cov_b[off_diag].mean(), # should decrease
-            # "matrix_slice": cov_b[:5, :5],
-            # "test_vals_max": jnp.max(cov_b, 1)[-5:],
-            # "test_vals_argmax": jnp.argmax(cov_b, 1)[-5:],
-            # "loss_B_Orthogonal": ort_b_loss,
-            #"ort_loss_diag": ort_loss_diag, # Should increase or stay same (since max already on the diagonal)
-            # "ort_loss_offdiag": ort_loss_offdiag, # Should decrease and ~ equal to ort_loss_diag
-            #"correct_B_Orthogonal": jnp.mean(correct_ort),
-            # FB LOSS
-            # "categorical_accuracy_M": jnp.mean(correct_fb),
             "fb_offdiag_loss": fb_offdiag,
             "fb_diag_loss": fb_diag,
-            # "target_M": target_M.mean(),
-            # "M": M1.mean(),
         }
 
     def actor_loss(self, batch, z_latent, dynamics_embedding, grad_params, rng):
@@ -130,48 +118,17 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             'actor_loss': actor_loss,
             'mean_action': actions.mean()
         }
-    
-    def context_encoder_loss(self, batch, grad_params):
-        dynamics_embedding_mean, dynamics_embedding_std = self.network.select('dynamic_transformer')(batch['traj_states'], batch['traj_actions'],
-                                                                                batch['traj_next_states'], train=True, params=grad_params)
-        dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=self.rng, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_embedding_std)
-        dynamics_embedding = jnp.tile(dynamics_embedding[:, None], reps=(1, batch['traj_states'].shape[1], 1))
-        next_state_pred = self.network.select('next_state_pred')(batch['traj_states'], batch['traj_actions'], dynamics_embedding, params=grad_params)
-        loss = optax.squared_error(next_state_pred, batch['traj_next_states']).mean()
-        return loss, {"context_embedding_loss": loss}
-    
-    def total_loss(self, batch, latent_z, grad_params, train_context_embedding, rng=None):
+    def total_loss(self, batch, latent_z, grad_params, train_context_embedding=None, rng=None):
         """Compute the total loss."""
         info = {}
         rng = rng if rng is not None else self.rng
 
         rng, actor_rng, fb_recon_rng = jax.random.split(rng, 3)
-        actor_loss = 0.0
-        fb_loss = 0.0
-        
-        dynamics_embedding_mean, dynamics_embedding_log_std = self.network.select('dynamic_transformer')(batch['traj_states'], batch['traj_actions'],
-                                                                                batch['traj_next_states'], train=False)
-        dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=self.rng, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_embedding_log_std)
-        
-        if not train_context_embedding:
-            dynamics_embedding = jax.lax.stop_gradient(dynamics_embedding)
-            fb_loss, fb_info = self.fb_loss(batch, latent_z, dynamics_embedding, grad_params, fb_recon_rng)
-            for k, v in fb_info.items():
-                info[f'fb/{k}'] = v
+        fb_loss, fb_info = self.fb_loss(batch, latent_z, None, grad_params, fb_recon_rng)
+        for k, v in fb_info.items():
+            info[f'fb/{k}'] = v
 
-            if not self.config['discrete']:
-                actor_loss, actor_info = self.actor_loss(batch, latent_z, dynamics_embedding, grad_params, actor_rng)
-                for k, v in actor_info.items():
-                    info[f'actor/{k}'] = v
-
-        trans_loss = 0.0
-        if train_context_embedding:
-            trans_loss, trans_info = self.context_encoder_loss(batch, grad_params)
-            for k, v in trans_info.items():
-                info[f'context_encoder_loss/{k}'] = v
-        
-        loss = fb_loss + actor_loss + trans_loss
-        return loss, info
+        return fb_loss, info
 
     def target_update(self, network, module_name):
         """Update the target network."""
@@ -183,13 +140,13 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         network.params[f'modules_target_{module_name}'] = new_target_params
         
     @partial(jax.jit, static_argnames=('train_context_embedding'))
-    def update(self, batch, train_context_embedding=True):
+    def update(self, batch, train_context_embedding=False):
         """Update the agent and return a new agent with information dictionary."""
         new_rng, rng = jax.random.split(self.rng)
         z = self.sample_mixed_z(batch, self.config['z_dim'], new_rng)
         
         def loss_fn(grad_params):
-            return self.total_loss(batch, z, grad_params, train_context_embedding=train_context_embedding, rng=rng)
+            return self.total_loss(batch, z, grad_params, train_context_embedding=False, rng=rng)
 
         new_network, info = self.network.apply_loss_fn(loss_fn=loss_fn)        
         self.target_update(new_network, 'f_value')
@@ -207,8 +164,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
     def sample_mixed_z(self, batch, latent_dim, key):
         batch_size = batch['observations'].shape[0]
         z = self.sample_z(batch_size, latent_dim, key)
-        b_goals = self.network.select('b_value')(goal=batch['actor_goals'],
-                                                mdp_num=None, dynamics_embedding=None)
+        b_goals = self.network.select('b_value')(goal=batch['actor_goals'], mdp_num=None, dynamics_embedding=None) # batch['layout_type']
         mask = jax.random.uniform(key, shape=(batch_size, 1)) < self.config['z_mix_ratio']
         z = jnp.where(mask, z, b_goals)
         return z
@@ -218,7 +174,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         """
         If rewards are None -> treat as goal-conditioned
         """    
-        z = self.network.select('b_value')(goal=obs, mdp_num=None, dynamics_embedding=None)
+        z = self.network.select('b_value')(goal=obs, mdp_num=None, dynamics_embedding=None) # mdp_num
         return z
     
     @jax.jit
@@ -231,16 +187,10 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         dynamics_embedding=None,
         temperature=1.0,
     ):
-        """Sample actions from the actor."""
-        if not self.config['discrete']:
-            dist = self.network.select('actor')(observations, latent_z, temperature=temperature)
-            actions = dist.sample(seed=seed)
-            actions = jnp.clip(actions, -1, 1)
-        else:
-            latent_z = jnp.atleast_2d(latent_z)
-            Q = self.predict_q(observations, latent_z, mdp_num=None, dynamics_embedding=dynamics_embedding)
-            actions = jnp.argmax(Q, axis=-1)
-            
+        latent_z = jnp.atleast_2d(latent_z)
+        Q = self.predict_q(observations, latent_z, mdp_num=mdp_num, dynamics_embedding=None)
+        actions = jnp.argmax(Q, axis=-1)
+        
         return actions
 
     def predict_q(
@@ -252,7 +202,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             Q2 = (F2 * z).sum(-1)
         else:
             observation = jnp.atleast_2d(observation)
-            F1, F2 = self.network.select('f_value')(observation, z, mdp_num=None, dynamics_embedding=dynamics_embedding)
+            F1, F2 = self.network.select('f_value')(observation, z, mdp_num=mdp_num, dynamics_embedding=None)
             Q1 = jnp.einsum('sda, sd -> sa', F1, z)
             Q2 = jnp.einsum('sda, sd -> sa', F2, z)
         Q = jnp.minimum(Q1, Q2)
@@ -280,96 +230,31 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         
         ex_goals = ex_observations
         
-        if config['discrete']:
-            action_dim = int(ex_actions.max() + 1)
-        else:
-            action_dim = ex_actions.shape[-1]
+        action_dim = int(ex_actions.max() + 1)
         
-        # Define networks.
-        if not config['discrete']:
-            forward_def = FValue(
-                latent_z_dim=config['z_dim'],
-                preprocess=True,
-                f_layer_norm=config['f_layer_norm'],
-                f_preprocessor_hidden_dims=config['f_preprocessor_hidden_dims'],
-                f_hidden_dims=config['f_hidden_dims'],
-                activate_final=config['f_activate_final'],
+        forward_def = FValueDiscrete(
+            action_dim=action_dim,
+            latent_z_dim=config['z_dim'],
+            f_hidden_dims=config['f_hidden_dims'],
+            f_layer_norm=config['f_layer_norm'],
         )
-        else:
-            forward_def = FValueDiscrete(
-                action_dim=action_dim,
-                latent_z_dim=config['z_dim'],
-                f_hidden_dims=config['f_hidden_dims'],
-                f_layer_norm=config['f_layer_norm'],
-            )
         backward_def = BValue(
             latent_z_dim=config['z_dim'],
             b_layer_norm=config['b_layer_norm'],
             b_hidden_dims=config['b_hidden_dims'],
         )
-        actor_def = None
-        if not config['discrete']:
-            actor_def = FBActor(
-                hidden_dims=config['actor_hidden_dims'],
-                actor_preprocessor_layer_norm=config['actor_preprocessor_layer_norm'],
-                actor_preprocessor_activate_final=config['actor_preprocessor_activate_final'],
-                actor_preprocessor_hidden_dims=config['actor_preprocessor_hidden_dims'],
-                action_dim=action_dim,
-                tanh_squash=config['tanh_squash'],
-                state_dependent_std=config['state_dependent_std'],
-                const_std=config['const_std'],
-                final_fc_init_scale=config['actor_fc_scale'],
-            )
         latent_z = jax.random.normal(init_rng, shape=(1, config['z_dim']))
         latent_z = latent_z * jnp.sqrt(latent_z.shape[-1]) / jnp.linalg.norm(latent_z, axis=-1, keepdims=True)
         
-        mdp_layout_one_hot = None
-        if config['use_context']:
-            dynamics_embedding = jnp.zeros((1, config['output_dim']))
+        mdp_layout_one_hot = np.zeros((1, config['one_hot_dim']))
         network_info = dict(
-            f_value=(forward_def, (ex_observations, ex_actions, latent_z)) if not config['discrete'] \
-                else (forward_def, (ex_observations, latent_z, None, mdp_layout_one_hot, dynamics_embedding)),
-            target_f_value=(copy.deepcopy(forward_def), (ex_observations, ex_actions, latent_z)) if not config['discrete'] \
-                else (copy.deepcopy(forward_def), (ex_observations, latent_z, None, mdp_layout_one_hot, dynamics_embedding)),
-            b_value=(backward_def, (ex_goals, None, mdp_layout_one_hot, None)),
-            target_b_value = (copy.deepcopy(backward_def), (ex_goals, None, mdp_layout_one_hot, None)),
+            f_value=(forward_def, (ex_observations, latent_z, mdp_layout_one_hot, None)),
+            target_f_value=(copy.deepcopy(forward_def), (ex_observations, latent_z, mdp_layout_one_hot, None)),
+            # b_value=(backward_def, (ex_goals, None, mdp_layout_one_hot, None)),
+            b_value=(backward_def, (ex_goals, None, None, None)),
+            # target_b_value = (copy.deepcopy(backward_def), (ex_goals, None, mdp_layout_one_hot, None)),
+            target_b_value = (copy.deepcopy(backward_def), (ex_goals, None, None, None))
         )
-        if actor_def is not None:
-            network_info.update({"actor": (actor_def, (ex_observations, latent_z, ))})
-        
-        if config['use_context']:
-            from utils.transformer_nets import DynamicsTransformer, NextStatePrediction
-            from utils.networks import AnchorProjector
-            
-            next_state_pred_def = NextStatePrediction(hidden_dims=config['world_pred_hidden'], out_dim=ex_observations.shape[-1])
-            dynamics_def = DynamicsTransformer(
-                num_layers=config['n_blocks'],
-                num_heads=config['n_heads'],
-                out_dim=config['output_dim'],
-                action_dim=action_dim,
-                causal=False,
-                emb_dim=config['emb_dim'],
-                mlp_dim=config['mlp_dim'],
-                dropout_rate=0.0,
-                attention_dropout_rate=0.0,
-                context_len=config['context_len']
-            )
-            network_info.update(
-                dynamic_transformer=(dynamics_def, (jnp.zeros((1, 1, ex_observations.shape[-1])), jnp.zeros((1, 1, ex_actions.shape[-1])),
-                                                    jnp.zeros((1, 1, ex_observations.shape[-1])), True, True))
-            )
-            network_info.update(
-                next_state_pred=(next_state_pred_def, (jnp.zeros((1, 1, ex_observations.shape[-1])), jnp.zeros((1, 1, ex_actions.shape[-1])),
-                                                    jnp.zeros((1, 1, config['output_dim']))))
-            )
-            anchor_proj_def = AnchorProjector(
-                    latent_z_dim=config['z_dim'],
-                    b_hidden_dims=config['b_hidden_dims']
-                )
-            network_info.update(
-                anchor_proj=(anchor_proj_def, (dynamics_embedding,))
-            )
-            
         networks = {k: v[0] for k, v in network_info.items()}
         network_args = {k: v[1] for k, v in network_info.items()}
 

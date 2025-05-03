@@ -1,8 +1,7 @@
 import os
 import sys
 os.environ['MUJOCO_GL']='egl'
-os.environ['CUDA_VISIBLE_DEVICES']='0'
-
+os.environ['CUDA_VISIBLE_DEVICES']='1'
 # import shutup
 # shutup.please()
 
@@ -40,7 +39,7 @@ from utils.log_utils import CsvLogger, get_exp_name, get_wandb_video, setup_wand
 from envs.ogbench.ant_utils import policy_image, value_image
 from envs.custom_mazes.env_utils import value_image_fourrooms, policy_image_fourrooms
 from envs.minigrid.env_utils import value_image_doors, policy_image_doors, doors_value_fn,\
-    random_exploration, image_mdps
+    random_exploration, image_mdps, random_exploration_fourrooms
 from envs.minigrid.doors_grid import MinigridWrapper
 
 FLAGS = flags.FLAGS
@@ -172,7 +171,7 @@ def main(cfg: DictConfig):
     exp_name = get_exp_name(cfg.seed)
 
     config = OmegaConf.to_container(cfg, resolve=True)
-    pprint(config)
+    # pprint(config)
     run = setup_wandb(project='ZeroShotRL', group=config['run_group'], name=exp_name,
                     mode="offline" if FLAGS.disable_jit else "online", config=config, tags=config['tags'])
     env, eval_env, train_dataset, val_dataset = make_env_and_datasets(dataset_name=config['env']['env_name'],
@@ -205,11 +204,11 @@ def main(cfg: DictConfig):
     first_time = time.time()
     last_time = time.time()
     
-    # MINIMAL 3 ENVS FOR VISUALIZATION
+    # MINIMUM 3 ENVS FOR VISUALIZATION
     if config['env']['env_name'] == "doors-dynamics":
         plot_layouts = []
         for i in range(config['agent']['number_of_meta_envs']):
-            cur_layout = train_dataset.sample(512, layout_type=i, context_length=config['agent']['context_len'])[1]
+            cur_layout = train_dataset.sample(1024, layout_type=i, context_length=config['agent']['context_len'])[1]
             plot_layouts.append(cur_layout)
             
         plot_layouts = functools.reduce(concatenate_dicts, plot_layouts)
@@ -234,12 +233,13 @@ def main(cfg: DictConfig):
             batch = train_dataset.sample(config['agent']['batch_size'])
             agent, update_info = agent.update(batch)
         else:
-            batch = train_dataset.sample(config['agent']['batch_size'], layout_type=step % config['agent']['number_of_meta_envs'],
-                                        context_length=config['agent']['context_len'])[1]
+            batch = train_dataset.sample(config['agent']['batch_size'], layout_type=None,
+                                        context_length=config['agent']['context_len'], get_traj_batch=True)[1]
+            # for num_per_layout_updates in range(10):
             agent, update_info = agent.update(batch, train_context_embedding=True if step < config['agent']['dyn_encoder_warmup_steps'] else False)
                 
         # Log metrics.
-        if step % config['log_interval'] == 0 or step == 1:
+        if step % config['log_interval'] == 0 and step > 1:
             train_metrics = {f'training/{k}': v for k, v in update_info.items()}
             train_metrics['time/epoch_time'] = (time.time() - last_time) / config['log_interval']
             train_metrics['time/total_time'] = time.time() - first_time
@@ -303,22 +303,86 @@ def main(cfg: DictConfig):
             if 'fourrooms-dynamics' in config['env']['env_name']:
                 from envs.custom_mazes.dynamics_utils import visualize_policy, visualize_value_image
                 from envs.custom_mazes.darkroom import FourRoomsMazeEnv, Maze
+                from utils.evaluation import evaluate_fourrooms_dynamics
+                from envs.env_utils import EpisodeMonitor
                 
-                # First random layout
-                pred_policy_img = visualize_policy(env, agent, key, train_dataset, layout_type=0, task_num=step % 3)
-                pred_value_img = visualize_value_image(env, agent, key, example_batch, layout_type=0, task_num=step % 3)
+                # First layout
+                env = FourRoomsMazeEnv(Maze(seed=0, maze_type='fourrooms_random_layouts'), max_steps=config['agent']['context_len'])
+                pred_policy_img = visualize_policy(env, agent, key, train_dataset, layout_type=0, task_num=0)
+                pred_value_img = visualize_value_image(env, agent, key, example_batch, layout_type=0, task_num=0)
                 
-                eval_metrics[f'draw_Q/draw_value_task_{step % 3}_layout_1'] = wandb.Image(pred_value_img)
-                eval_metrics[f'draw_policy/draw_policy_task_{step % 3}_layout_1'] = wandb.Image(pred_policy_img)
+                eval_metrics[f'draw_Q/draw_value_task_0_layout_1'] = wandb.Image(pred_value_img)
+                eval_metrics[f'draw_policy/draw_policy_task_0_layout_1'] = wandb.Image(pred_policy_img)
                 
-                # Second random layout
-                env = FourRoomsMazeEnv(Maze(maze_type='fourrooms_random_layouts'), max_steps=100)
-                pred_policy_img = visualize_policy(env, agent, key, train_dataset, layout_type=1, task_num=step % 3) # layout_type is dummy variable
-                pred_value_img = visualize_value_image(env, agent, key, example_batch, layout_type=1, task_num=step % 3)
+                # Second layout
+                env = FourRoomsMazeEnv(Maze(seed=1, maze_type='fourrooms_random_layouts'), max_steps=config['agent']['context_len'])
+                pred_policy_img = visualize_policy(env, agent, key, train_dataset, layout_type=1, task_num=1) # layout_type is dummy variable
+                pred_value_img = visualize_value_image(env, agent, key, example_batch, layout_type=1, task_num=1)
                 
-                eval_metrics[f'draw_Q/draw_value_task_{step % 3}_layout_2'] = wandb.Image(pred_value_img)
-                eval_metrics[f'draw_policy/draw_policy_task_{step % 3}_layout_2'] = wandb.Image(pred_policy_img)
+                eval_metrics[f'draw_Q/draw_value_task_1_layout_2'] = wandb.Image(pred_value_img)
+                eval_metrics[f'draw_policy/draw_policy_task_1_layout_2'] = wandb.Image(pred_policy_img)
                 
+                for task_id in range(4): # static for 4 rooms
+                    for env_id in range(config['agent']['number_of_meta_envs']):
+                        env = FourRoomsMazeEnv(Maze(seed=env_id, maze_type='fourrooms_random_layouts'), max_steps=config['agent']['context_len'])
+                        env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
+                        env.reset()
+                        dataset_inference, env = random_exploration_fourrooms(env, num_episodes=1, layout_type=0, num_mdp=config['agent']['number_of_meta_envs'])
+                        dynamics_embedding_mean, dynamics_mean_std = agent.network.select('dynamic_transformer')(dataset_inference['observations'][None], dataset_inference['actions'][None,:,None],
+                                                                                                    dataset_inference['next_observations'][None], train=False, return_embedding=True)
+                        dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=key, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_mean_std)
+                        dynamics_embedding=dynamics_embedding.squeeze()
+                        eval_info, _, _ = evaluate_fourrooms_dynamics(
+                                agent=agent,
+                                dynamics_embedding=dynamics_embedding,
+                                env=env,
+                                task_id=task_id,
+                                config=None,
+                                num_eval_episodes=config['agent']['num_eval_episodes'],
+                                num_video_episodes=0,
+                                video_frame_skip=1,
+                                eval_temperature=0.0,
+                                eval_gaussian=None
+                            )
+                        eval_metrics.update(
+                            {f'evaluation/task_{task_id}_{k}': v for k, v in eval_info.items() if k != 'total.timesteps'}
+                        )
+                        for k, v in eval_info.items():
+                            overall_metrics[k].append(v)
+                            
+                for k, v in overall_metrics.items():
+                    eval_metrics[f'evaluation/overall_{k}_train'] = np.mean(v)
+                
+                for task_id in range(4):
+                    for env_id in range(config['agent']['number_of_meta_envs']+10, config['agent']['number_of_meta_envs'] + 20):
+                        env = FourRoomsMazeEnv(Maze(seed=env_id, maze_type='fourrooms_random_layouts'), max_steps=config['agent']['context_len'])
+                        env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
+                        env.reset()
+                        dataset_inference, env = random_exploration_fourrooms(env, num_episodes=1, layout_type=0, num_mdp=config['agent']['number_of_meta_envs'])
+                        dynamics_embedding_mean, dynamics_mean_std = agent.network.select('dynamic_transformer')(dataset_inference['observations'][None], dataset_inference['actions'][None,:,None],
+                                                                                                    dataset_inference['next_observations'][None], train=False, return_embedding=True)
+                        dynamics_embedding = dynamics_embedding_mean + jax.random.normal(key=key, shape=dynamics_embedding_mean.shape) * jnp.exp(dynamics_mean_std)
+                        dynamics_embedding=dynamics_embedding.squeeze()
+                        eval_info, _, _ = evaluate_fourrooms_dynamics(
+                                agent=agent,
+                                dynamics_embedding=dynamics_embedding,
+                                env=env,
+                                task_id=task_id,
+                                config=None,
+                                num_eval_episodes=config['agent']['num_eval_episodes'],
+                                num_video_episodes=0,
+                                video_frame_skip=1,
+                                eval_temperature=0.0,
+                                eval_gaussian=None
+                            )
+                        eval_metrics.update(
+                            {f'evaluation/task_{task_id}_{k}': v for k, v in eval_info.items() if k != 'total.timesteps'}
+                        )
+                        for k, v in eval_info.items():
+                            overall_metrics[k].append(v)
+                for k, v in overall_metrics.items():
+                    eval_metrics[f'evaluation/overall_{k}_ood'] = np.mean(v)
+                    
             if 'fourrooms-vanilla' in config['env']['env_name']:
                 from envs.custom_mazes.darkroom import visualize_value_image, visualize_policy
                 

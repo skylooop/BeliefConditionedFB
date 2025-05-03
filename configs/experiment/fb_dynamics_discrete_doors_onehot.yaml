@@ -1,14 +1,15 @@
 # @package _global_
 
 defaults:
-  - override /env: gridworld/4rooms-vanilla
-  - override /agent: fb
+  - override /env: gridworld/4rooms-dynamics
+  - override /agent: dynamics_fb
 
-train_steps: 150_000
+train_steps: 400_000
+
 log_interval: 10_000
-eval_interval: 30_000
+eval_interval: 50_000
 
-tags: [vanilla-fb, 4rooms, discrete]
+tags: [dynamics-fb, doors, discrete]
 
 agent:
   lr: 3e-4
@@ -18,6 +19,7 @@ agent:
   z_dim: 100
   z_mix_ratio: 0.5
   boltzmann: True
+  one_hot_dim: 3
 
   # F Network
   f_hidden_dims: [1024, 512, 512]  # Value network hidden dimensions.
@@ -29,7 +31,8 @@ agent:
 
   # Whether Dynamics-Adaptive
   use_context: False
-
+  number_of_meta_envs: 4
+  
   # MISC
   discount: 0.99
   tau: 0.01  # Target network update rate.

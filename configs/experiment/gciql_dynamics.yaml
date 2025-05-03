@@ -31,7 +31,7 @@ agent:
   dyn_encoder_warmup_steps: 50000
   n_blocks: 4
   n_heads: 4
-  emb_dim: 96 # 96
+  emb_dim: 96
   mlp_dim: 512
   output_dim: 4 # changed
   context_len: 100

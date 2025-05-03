@@ -157,7 +157,7 @@ def random_exploration(env, num_episodes: int, layout_type: int, num_mdp: int):
     dataset['next_observations'] = np.concatenate(next_observations)
     
     ob_mask = (1.0 - dataset['terminals']).astype(bool)
-    next_ob_mask = np.concatenate([[False], ob_mask[:-1]])
+    # next_ob_mask = np.concatenate([[False], ob_mask[:-1]])
     # dataset['next_observations'] = dataset['observations'][next_ob_mask]
     dataset['next_observations'] = dataset['next_observations'][ob_mask]
     dataset['observations'] = dataset['observations'][ob_mask]

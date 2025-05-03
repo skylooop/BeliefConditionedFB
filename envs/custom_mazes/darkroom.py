@@ -15,13 +15,13 @@ from IPython.display import clear_output
 import jax
 
 class Maze(BaseMaze):
-    def __init__(self, maze_type: str='fourrooms', size: str = 11, **kwargs):
+    def __init__(self, seed, maze_type: str='fourrooms', size: str = 11, **kwargs):
         if maze_type == 'fourrooms':
             self.maze_grid = generate_four_room_env(size, size)
         elif maze_type == "gridworld":
             self.maze_grid = gridworld()
         elif maze_type == "fourrooms_random_layouts":
-            self.maze_grid = fourrooms_random_layouts(size, size)
+            self.maze_grid = fourrooms_random_layouts(size, size, seed=seed)
         self.num_tasks = 4
         self.maze_type = maze_type
         super().__init__(**kwargs)

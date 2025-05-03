@@ -202,18 +202,21 @@ class GCDataset:
                 stacked_observations = self.get_stacked_observations(np.arange(self.size))
                 self.dataset = Dataset(self.dataset.copy(dict(observations=stacked_observations)))
 
-    def filter_by_layout(self, layout_label, layout_number=None):
+    def filter_by_layout(self, layout_label, layout_number=None, custom_layout=None):
         """Filter the dataset to only include transitions from the specified layout."""
         # Get indices corresponding to the specified layout
-        layout_mask = jnp.all(self.dataset['layout_type'] == jax.nn.one_hot(jnp.array([layout_label]),
+        if custom_layout is None:
+            layout_mask = jnp.all(self.dataset['layout_type'] == jax.nn.one_hot(jnp.array([layout_label]),
                                                                         self.config['number_of_meta_envs'] if layout_number is None else layout_number), axis=-1)
+        else:
+            layout_mask = jnp.all(self.dataset['layout_type'] == custom_layout, axis=-1)
         filtered_idxs = np.nonzero(layout_mask)[0]
 
         # Create a new dataset containing only the filtered indices
         filtered_data = self.dataset.get_subset(filtered_idxs)
         return Dataset.create(**filtered_data)
         
-    def sample(self, batch_size: int, idxs=None, evaluation=False, layout_type=None, context_length=None, layout_number=None):
+    def sample(self, batch_size: int, idxs=None, evaluation=False, layout_type=None, context_length=None, layout_number=None, custom_layout=None, get_traj_batch=None):
         """Sample a batch of transitions with goals.
 
         This method samples a batch of transitions with goals (value_goals and actor_goals) from the dataset. They are
@@ -226,7 +229,7 @@ class GCDataset:
             evaluation: Whether to sample for evaluation. If True, image augmentation is not applied.
         """
         if layout_type is not None:
-            filtered_dataset = self.filter_by_layout(layout_type, layout_number)
+            filtered_dataset = self.filter_by_layout(layout_type, layout_number, custom_layout)
         else:
             filtered_dataset = self.dataset
 
@@ -264,7 +267,7 @@ class GCDataset:
                 self.augment(batch, ['observations', 'next_observations', 'value_goals', 'actor_goals'])
         
         # for dynamics-aware
-        if layout_type is not None:
+        if layout_type is not None or get_traj_batch is not None:
             context_batch = self.sample_traj_random(batch_size, context_length)
             context_batch2 = self.sample_traj_random(batch_size, context_length)
             return batch, context_batch, context_batch2

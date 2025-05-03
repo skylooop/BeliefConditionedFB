@@ -1,23 +1,29 @@
-program: main.py
+program: main_dynamics_discrete.py
 
 method: grid
 
 metric:
-  name: evaluation/overall_success
+  name: evaluation/overall_episode.return_ood
   goal: maximize
 
 parameters:
-  agent.z_dim:
-    values: [100, 128, 150]
-  agent.lr:
-    values: [1e-4, 3e-4]
-  agent.tau:
-    values: [0.01, 0.005]
-  
+  agent.z_mix_ratio:
+    values: [0.0, 0.5]
+  agent.n_blocks:
+    values: [2, 4, 6, 8]
+  agent.n_heads:
+    values: [2, 4, 6, 8]
+  agent.emb_dim:
+    values: [72, 96]
+  agent.output_dim:
+    values: [4, 8, 16, 32, 64]
+  agent.mlp_dim:
+    values: [64, 128, 256, 512]
+    
 command:
   - ${env}
   - python
   - ${program}
   - "--disable_jit=False"
-  - "experiment=cont.yaml"
+  - "experiment=fb_dynamics_discrete_4rooms.yaml"
   - ${args_no_hyphens}

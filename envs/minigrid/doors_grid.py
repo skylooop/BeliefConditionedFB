@@ -56,7 +56,6 @@ class DynamicsGeneralization_Doors(MiniGridEnv):
         task_num: int = 0,
         **kwargs,
     ):
-        # Current (hidden) state, which generated 
         self.agent_start_pos = agent_start_pos
         self.agent_start_dir = agent_start_dir
         self.task_num = task_num
@@ -73,35 +72,36 @@ class DynamicsGeneralization_Doors(MiniGridEnv):
     def _gen_mission():
         return "grand mission"
 
-    def _gen_grid(self, width, height, layout_type=None):
+    def _gen_grid(self, width, height, layout_type=None, empty=False):
         # Create an empty grid
         self.grid = Grid(width, height)
 
         self.grid.wall_rect(0, 0, width, height)
 
-        for i in range(0, height):
-            self.grid.set(5, i, Wall())
-            self.grid.set(3, i, Wall())
-        
-        if layout_type == 1:
-            door_3 = 2
-            door_5 = 6
-        elif layout_type == 0:
-            door_3 = 6
-            door_5 = 2
-        else:
-            # If layout_type is provided, use it as a seed; else, random
-            if layout_type is not None:
-                rng = np.random.RandomState(layout_type)
-                door_3 = rng.randint(1, height - 1)
-                door_5 = rng.randint(1, height - 1)
+        if not empty:
+            for i in range(0, height):
+                self.grid.set(5, i, Wall())
+                self.grid.set(3, i, Wall())
+            
+            if layout_type == 1:
+                door_3 = 2
+                door_5 = 6
+            elif layout_type == 0:
+                door_3 = 6
+                door_5 = 2
             else:
-                door_3 = np.random.randint(1, height - 1)
-                door_5 = np.random.randint(1, height - 1)
-                
-        self.grid.set(3, door_3, Door(COLOR_NAMES[0], is_locked=False, is_open=True))
-        self.grid.set(5, door_5, Door(COLOR_NAMES[3], is_locked=False, is_open=True))
-        
+                # If layout_type is provided, use it as a seed; else, random
+                if layout_type is not None:
+                    rng = np.random.RandomState(layout_type)
+                    door_3 = rng.randint(1, height - 1)
+                    door_5 = rng.randint(1, height - 1)
+                else:
+                    door_3 = np.random.randint(1, height - 1)
+                    door_5 = np.random.randint(1, height - 1)
+                    
+            self.grid.set(3, door_3, Door(COLOR_NAMES[0], is_locked=False, is_open=True))
+            self.grid.set(5, door_5, Door(COLOR_NAMES[3], is_locked=False, is_open=True))
+            
         if self.task_num == 0: # currently hardcoded
             goal_coordinates = (width - 2, 4)
         elif self.task_num == 1:

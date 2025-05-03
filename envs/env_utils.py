@@ -8,7 +8,6 @@ from gymnasium.spaces import Box
 import ogbench
 from utils.datasets import Dataset, GCDataset
 from envs.ogbench.ant_utils import MazeVizWrapper
-import jax
 
 class EpisodeMonitor(gymnasium.Wrapper):
     """Environment wrapper to monitor episode statistics."""
@@ -120,8 +119,8 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5, 
     if 'fourrooms-dynamics' in dataset_name:
         from envs.custom_mazes.darkroom import FourRoomsMazeEnv, Maze
         
-        env = FourRoomsMazeEnv(Maze(maze_type='fourrooms_random_layouts'))
-        eval_env = FourRoomsMazeEnv(Maze(maze_type='fourrooms_random_layouts'))
+        env = FourRoomsMazeEnv(Maze(seed=0, maze_type='fourrooms_random_layouts'))
+        eval_env = FourRoomsMazeEnv(Maze(seed=0, maze_type='fourrooms_random_layouts'))
         env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
         eval_env = EpisodeMonitor(eval_env, filter_regexes=['.*privileged.*', '.*proprio.*'])
         train_dataset = np.load(f"aux_data/fourrooms_meta{number_of_meta_envs}_data.npy", allow_pickle=True)[()] # number means number of training layouts
