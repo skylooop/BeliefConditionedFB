@@ -6,8 +6,8 @@ defaults:
 
 train_steps: 200_001
 
-log_interval: 20_000
-eval_interval: 100_000
+log_interval: 10_000
+eval_interval: 30_000
 
 tags: [dynamics-fb, 4rooms, discrete]
 
@@ -17,7 +17,7 @@ agent:
 
   # FB Specific
   z_dim: 150
-  z_mix_ratio: 0.0
+  z_mix_ratio: 0.5
   boltzmann: True
 
   # F Network
@@ -31,7 +31,7 @@ agent:
   # Whether Dynamics-Adaptive
   use_context: True
   number_of_meta_envs: 50
-  dyn_encoder_warmup_steps: 80000
+  dyn_encoder_warmup_steps: 80000 ###
   n_blocks: 6
   n_heads: 6
   emb_dim: 96

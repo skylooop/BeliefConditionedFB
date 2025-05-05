@@ -159,7 +159,6 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             custom_anchor: shape (batch_size, dim)
             Returns z_post of shape (batch_size, dim).
             """
-            # Normalize anchor per-sample
             anchor = custom_anchor / (jnp.linalg.norm(custom_anchor, axis=-1, keepdims=True) + 1e-6)
             # Draw VMF samples around [1,0,..]
             samples = self._vmf_sample_north_pole(key, batch_size, dim, kappa)
@@ -178,11 +177,9 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         uniform_samples = jax.random.normal(v_key, (batch_size, dim-1))
         uniform_samples /= jnp.linalg.norm(uniform_samples, axis=-1, keepdims=True)
         
-        # Step 2: Sample radial component (corrected implementation)
         b = (-2*kappa + jnp.sqrt(4*kappa**2 + (dim-1)**2)) / (dim-1)
         t = jax.random.beta(w_key, (dim-1)/2, (dim-1)/2, (batch_size,))
         
-        # Compute w using full Wood's formula
         numerator = 1 - (1 + b) * t
         denominator = 1 - (1 - b) * t + 1e-6
         w = numerator / denominator
