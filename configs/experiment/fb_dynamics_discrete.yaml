@@ -41,7 +41,7 @@ agent:
   use_masked_attention: False
   use_mean_embedding: True
   cosine_schedule: False
-  world_pred_hidden: [128, 128, 128]
+  world_pred_hidden: [256, 256, 256]
 
   # MISC
   discount: 0.99

@@ -20,15 +20,15 @@ import ogbench.locomaze  # noqa
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer('seed', 0, 'Random seed.')
-flags.DEFINE_string('env_name', 'pointmaze-medium-layout4', 'Environment name.')
-flags.DEFINE_string('dataset_type', 'explore', 'Dataset type.')
+flags.DEFINE_integer('seed', 2, 'Random seed.')
+flags.DEFINE_string('env_name', 'pointmaze-medium-layout-9', 'Environment name.')
+flags.DEFINE_string('dataset_type', 'navigate', 'Dataset type.')
 flags.DEFINE_string('restore_path', 'experts/ant', 'Expert agent restore path.')
 flags.DEFINE_integer('restore_epoch', 400000, 'Expert agent restore epoch.')
-flags.DEFINE_string('save_path', '/home/m_bobrin/ZeroShotRL/aux_data/pointmaze-layout4', 'Save path.')
-flags.DEFINE_float('noise', 0.2, 'Gaussian action noise level.')
-flags.DEFINE_integer('num_episodes', 3000, 'Number of episodes.')
-flags.DEFINE_integer('max_episode_steps', 101, 'Maximum number of steps in an episode.')
+flags.DEFINE_string('save_path', '/home/m_bobrin/ZeroShotRL/aux_data/pointmaze-layout-9', 'Save path.')
+flags.DEFINE_float('noise', 0.1, 'Gaussian action noise level.')
+flags.DEFINE_integer('num_episodes', 500, 'Number of episodes.')
+flags.DEFINE_integer('max_episode_steps', 250, 'Maximum number of steps in an episode.')
 
 
 def main(_):
@@ -143,7 +143,7 @@ def main(_):
         else:
             raise ValueError(f'Unsupported dataset_type: {FLAGS.dataset_type}')
 
-        ob, _ = env.reset(options=dict(task_info=dict(init_ij=init_ij, goal_ij=goal_ij)))
+        ob, _ = env.reset(options=dict(task_info=dict(init_ij=init_ij, goal_ij=goal_ij), collect=True))
 
         done = False
         step = 0

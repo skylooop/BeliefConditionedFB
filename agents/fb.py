@@ -91,13 +91,6 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
             "mean_off_diag": cov_b[off_diag].mean(), # should decrease
             # "matrix_slice": cov_b[:5, :5],
             # "test_vals_max": jnp.max(cov_b, 1)[-5:],
-            # "test_vals_argmax": jnp.argmax(cov_b, 1)[-5:],
-            # "loss_B_Orthogonal": ort_b_loss,
-            #"ort_loss_diag": ort_loss_diag, # Should increase or stay same (since max already on the diagonal)
-            # "ort_loss_offdiag": ort_loss_offdiag, # Should decrease and ~ equal to ort_loss_diag
-            #"correct_B_Orthogonal": jnp.mean(correct_ort),
-            # FB LOSS
-            # "categorical_accuracy_M": jnp.mean(correct_fb),
             "fb_offdiag_loss": fb_offdiag,
             "fb_diag_loss": fb_diag,
             # "target_M": target_M.mean(),
@@ -120,7 +113,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         Q = jnp.minimum(Q1, Q2)
         
         Q_loss = -Q.mean()# / jax.lax.stop_gradient(jnp.abs(Q).mean() + 1e-6)
-        entropy_bonus = (1.0 * log_probs).mean()
+        entropy_bonus = (0.1 * log_probs).mean()
         actor_loss = Q_loss + entropy_bonus
         
         return actor_loss, {

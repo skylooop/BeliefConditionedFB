@@ -7,7 +7,7 @@ from gymnasium.spaces import Box
 from ogbench.locomaze.ant import AntEnv
 from ogbench.locomaze.humanoid import HumanoidEnv
 from ogbench.locomaze.point import PointEnv
-
+from collections import deque
 
 def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
     """Factory function for creating a maze environment.
@@ -41,7 +41,7 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
             maze_height=0.5,
             terminate_at_goal=True,
             ob_type='states',
-            add_noise_to_goal=True,
+            add_noise_to_goal=True, # True
             reward_task_id=None,
             use_oracle_rep=False,
             *args,
@@ -350,37 +350,125 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
             if self._reward_task_id == 0:
                 self._reward_task_id = 1  # Default task.
 
+        def find_empty_cells(self, grid, empty_value=0):
+            """Return list of (row, col) coordinates of empty cells in row-major order"""
+            return list(zip(*np.where(grid == empty_value)))
+
+        def manhattan_distance(self, pos1, pos2):
+            """Calculate Manhattan distance between two positions"""
+            return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+
+        def set_start_goal_positions_farthest(self, grid):
+            empty_cells = self.find_empty_cells(grid)
+            
+            if len(empty_cells) < 2:
+                raise ValueError("Not enough empty cells to set both start and goal positions")
+            
+            # Start is always the first empty cell (row-major order)
+            start_pos = empty_cells[0]
+            
+            # Find empty cell with maximum Manhattan distance from start
+            max_distance = -1
+            goal_pos = None
+            
+            for cell in empty_cells[1:]:  # Skip the start position
+                distance = self.manhattan_distance(start_pos, cell)
+                if distance > max_distance:
+                    max_distance = distance
+                    goal_pos = cell
+            
+            # Fallback if all other cells are adjacent to start
+            if goal_pos is None:
+                goal_pos = empty_cells[-1]  # Use last empty cell
+            
+            return start_pos, goal_pos
+        
+        def is_path_available(self, grid, start, goal):
+            """BFS to check if path exists between start and goal"""
+            if grid[start] != 0 or grid[goal] != 0:
+                return False
+            
+            rows, cols = grid.shape
+            visited = set()
+            queue = deque([start])
+            directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # 4-connected
+            
+            while queue:
+                current = queue.popleft()
+                if current == goal:
+                    return True
+                
+                for dr, dc in directions:
+                    nr, nc = current[0] + dr, current[1] + dc
+                    if (0 <= nr < rows and 0 <= nc < cols and 
+                        grid[nr, nc] == 0 and (nr, nc) not in visited):
+                        visited.add((nr, nc))
+                        queue.append((nr, nc))
+            
+            return False
+
+        def set_start_goal_with_path_validation(self, grid, max_attempts=100):
+            empty_cells = self.find_empty_cells(grid)
+            
+            if len(empty_cells) < 2:
+                raise ValueError("Not enough empty cells to set both start and goal positions")
+            
+            # Start is always the first empty cell
+            start_pos = empty_cells[0]
+            
+            # Sort other empty cells by distance (descending)
+            other_cells = sorted(empty_cells[1:], 
+                                key=lambda x: -self.manhattan_distance(start_pos, x))
+            
+            # Try to find farthest reachable goal
+            for cell in other_cells:
+                if self.is_path_available(grid, start_pos, cell):
+                    return start_pos, cell
+            
+            # If no path found to any cell, try nearest cells
+            for cell in reversed(other_cells):
+                if self.is_path_available(grid, start_pos, cell):
+                    return start_pos, cell
+            
+            raise RuntimeError("Failed to find valid goal position with path from start")
+        
         def reset(self, options=None, *args, **kwargs):
             if options is None:
                 options = {}
             # Set the task goal.
-            if self._reward_task_id is not None:
-                # Use the pre-defined task.
-                assert 1 <= self._reward_task_id <= self.num_tasks, f'Task ID must be in [1, {self.num_tasks}].'
-                self.cur_task_id = self._reward_task_id
-                self.cur_task_info = self.task_infos[self.cur_task_id - 1]
-            elif 'task_id' in options:
-                # Use the pre-defined task.
-                assert 1 <= options['task_id'] <= self.num_tasks, f'Task ID must be in [1, {self.num_tasks}].'
-                self.cur_task_id = options['task_id']
-                self.cur_task_info = self.task_infos[self.cur_task_id - 1]
-            elif 'task_info' in options:
-                # Use the provided task information.
-                self.cur_task_id = None
-                self.cur_task_info = options['task_info']
+            dataset_collect = options.get("collect", False)
+            if dataset_collect:
+                if self._reward_task_id is not None:
+                    # Use the pre-defined task.
+                    assert 1 <= self._reward_task_id <= self.num_tasks, f'Task ID must be in [1, {self.num_tasks}].'
+                    self.cur_task_id = self._reward_task_id
+                    self.cur_task_info = self.task_infos[self.cur_task_id - 1]
+                elif 'task_id' in options:
+                    # Use the pre-defined task.
+                    assert 1 <= options['task_id'] <= self.num_tasks, f'Task ID must be in [1, {self.num_tasks}].'
+                    self.cur_task_id = options['task_id']
+                    self.cur_task_info = self.task_infos[self.cur_task_id - 1]
+                elif 'task_info' in options:
+                    # Use the provided task information.
+                    self.cur_task_id = None
+                    self.cur_task_info = options['task_info']
+                else:
+                    # Randomly sample a task.
+                    self.cur_task_id = np.random.randint(1, self.num_tasks + 1)
+                    self.cur_task_info = self.task_infos[self.cur_task_id - 1]
+                start = self.cur_task_info['init_ij']
+                goal = self.cur_task_info['goal_ij']
             else:
-                # Randomly sample a task.
-                self.cur_task_id = np.random.randint(1, self.num_tasks + 1)
-                self.cur_task_info = self.task_infos[self.cur_task_id - 1]
-
+                start, goal = self.set_start_goal_with_path_validation(self.maze_map)
+            
             # Whether to provide a rendering of the goal.
             render_goal = False
             if 'render_goal' in options:
                 render_goal = options['render_goal']
 
             # Get initial and goal positions with noise.
-            init_xy = self.add_noise(self.ij_to_xy(self.cur_task_info['init_ij']))
-            goal_xy = self.ij_to_xy(self.cur_task_info['goal_ij'])
+            init_xy = self.add_noise(self.ij_to_xy(start))
+            goal_xy = self.ij_to_xy(goal)
             if self._add_noise_to_goal:
                 goal_xy = self.add_noise(goal_xy)
 

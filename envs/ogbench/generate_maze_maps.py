@@ -356,7 +356,7 @@ class MapGenerator:
                 if longest_dist >= self.max_path_len:
                     continue
 
-                self.print_grid_from_key(key)
+                # self.print_grid_from_key(key)
                 map_dict[key] = True
                 break
 
@@ -367,20 +367,6 @@ class MapGenerator:
 def main():
     map_generator = MapGenerator()
     maps = map_generator.generate_diverse_maps()
-
-    # just to visualize
-    # for i in range(10):
-    #     map_generator.print_grid_from_key(maps[i])
-    #     print('\n')
-
-    # print(maps.keys())
-
-    # map_generator = RecursiveMapGenerator()
-    # for i in range(10):
-    #     layout = map_generator.generate_maze()
-    #     map_generator.print_maze(layout)
-    #     print('\n')
-
 
 if __name__ == "__main__":
     main()

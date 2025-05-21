@@ -39,9 +39,9 @@ def plot_policy(env, dataset, N=14, M=20, fig=None, ax=None, random=False, title
         if value == 0:# and np.array([y, x]) != env.goal:
             action = action_fn(np.concatenate([[y], [x]], -1)).squeeze()
             action_name = action_names[action]
-            plt.text(x, y, action_name, ha='center', va='center', fontsize='large', color='green')
+            plt.text(x, y, action_name, ha='center', va='center', fontsize='large', color='purple')
         if np.array_equal(np.array([y, x]), env.goal):
-            plt.text(x, y, '$\cdot$', ha='center', va='center', fontsize='large', color='green')
+            plt.text(x, y, '$\cdot$', ha='center', va='center', fontsize='large', color='purple')
         
     goal = kwargs.get('goal', None)
     start = kwargs.get('start', None)
@@ -85,7 +85,7 @@ def plot_value_image_fourrooms(env, dataset, value_fn, N=11, M=11, fig=None, ax=
             
     divider = make_axes_locatable(ax)
     cax = divider.append_axes('right', size='5%', pad=0.05)
-    im = ax.imshow(coverage_map, cmap='inferno', vmin=-800)
+    im = ax.imshow(coverage_map - 600, cmap='inferno', vmin=-800)
     fig.colorbar(im, cax=cax, orientation='vertical')
     goal = kwargs.get('goal', None)
     if goal is not None:

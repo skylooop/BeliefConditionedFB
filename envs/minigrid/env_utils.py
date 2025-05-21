@@ -69,7 +69,7 @@ def convert_trajs_to_dict(trajs, pad_value=-1.0):
     
     return dict(result)
 
-def random_exploration_fourrooms(env, num_episodes: int, layout_type: int, num_mdp: int):
+def random_exploration_fourrooms(env, num_episodes: int, layout_type: int, num_mdp: int, start_pos=None):
     dataset = dict()
     observations = []
     actions = []
@@ -77,7 +77,10 @@ def random_exploration_fourrooms(env, num_episodes: int, layout_type: int, num_m
     next_observations = []
     
     for _ in range(num_episodes):
-        obs, _ = env.reset()
+        if start_pos is None:
+            obs, _ = env.reset()
+        else:
+            obs, _ = env.reset(options={'start':start_pos})
         cur_observations = []
         cur_actions = []
         cur_dones = []

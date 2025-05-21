@@ -36,7 +36,7 @@ from utils.log_utils import CsvLogger, get_exp_name, get_wandb_video, setup_wand
 from envs.ogbench.ant_utils import policy_image, value_image
 from envs.custom_mazes.env_utils import value_image_fourrooms, policy_image_fourrooms
 from envs.minigrid.env_utils import value_image_doors, policy_image_doors, doors_value_fn,\
-    plot_image_pcas, random_exploration, image_mdps
+    random_exploration, image_mdps
 
 FLAGS = flags.FLAGS
 flags.DEFINE_bool('disable_jit', False, 'Whether to disable JIT compilation.')

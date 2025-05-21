@@ -86,7 +86,7 @@ class FourRoomsMazeEnv(BaseEnv):
                     state_list.append((x, y))
         return state_list
     
-    def setup_goals(self, seed: int, task_num=None):
+    def setup_goals(self, seed: int, task_num=None, start_pos=None):
         if self.maze.maze_type == "fourrooms":
             goal_list = [(2, 2), (2, 9),
                         (8, 8), (8, 2)]
@@ -103,7 +103,10 @@ class FourRoomsMazeEnv(BaseEnv):
             random_goal = goal_list[np.random.randint(len(goal_list)) - 1]
         else:
             random_goal = goal_list[task_num - 1]
-        return self.reset(seed=seed, options={"goal": random_goal})
+        options = {"goal": random_goal}
+        if start_pos is not None:
+            options.update({"start": start_pos})
+        return self.reset(seed=seed, options=options)
     
     def generate_pos(self):
         return self.np_random.choice(self.maze.objects.free.positions)

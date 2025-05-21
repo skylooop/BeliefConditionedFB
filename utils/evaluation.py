@@ -201,6 +201,7 @@ def evaluate_fourrooms_dynamics(
     video_frame_skip=3,
     eval_temperature=0.0,
     eval_gaussian=None,
+    start_pos=None
 ):
     """Evaluate the agent in the environment.
 
@@ -226,7 +227,7 @@ def evaluate_fourrooms_dynamics(
     for i in pbar:
         traj = defaultdict(list)
         should_render = i >= num_eval_episodes
-        observation, info = env.unwrapped.setup_goals(seed=None, task_num=task_id)
+        observation, info = env.unwrapped.setup_goals(seed=None, task_num=task_id, start_pos=start_pos)
         goal = info.get("goal_pos", None)
         done = False
         step = 0
