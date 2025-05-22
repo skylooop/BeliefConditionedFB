@@ -25,7 +25,7 @@ flags.DEFINE_string('env_name', 'pointmaze-medium-layout-9', 'Environment name.'
 flags.DEFINE_string('dataset_type', 'navigate', 'Dataset type.')
 flags.DEFINE_string('restore_path', 'experts/ant', 'Expert agent restore path.')
 flags.DEFINE_integer('restore_epoch', 400000, 'Expert agent restore epoch.')
-flags.DEFINE_string('save_path', '/home/m_bobrin/ZeroShotRL/aux_data/pointmaze-layout-9', 'Save path.')
+flags.DEFINE_string('save_path', 'aux_data/pointmaze-layout-9', 'Save path.')
 flags.DEFINE_float('noise', 0.1, 'Gaussian action noise level.')
 flags.DEFINE_integer('num_episodes', 500, 'Number of episodes.')
 flags.DEFINE_integer('max_episode_steps', 250, 'Maximum number of steps in an episode.')

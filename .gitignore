@@ -1,3 +1,8 @@
+# research specific
+sweep_all.yaml
+notebooks/new_env.ipynb
+.vscode/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
