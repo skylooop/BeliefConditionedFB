@@ -53,7 +53,7 @@ class MLP(nn.Module):
     hidden_dims: Sequence[int]
     activations: Any = nn.gelu
     activate_final: bool = False
-    kernel_init: Any = default_init()
+    kernel_init: Any = orthogonal_scaling()
     layer_norm: bool = False
 
     @nn.compact

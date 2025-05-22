@@ -5,9 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 import shapely
-from shapely import Point, GeometryCollection
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-import jax
 import math
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.gridspec as gridspec

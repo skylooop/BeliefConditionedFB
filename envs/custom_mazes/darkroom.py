@@ -88,14 +88,14 @@ class FourRoomsMazeEnv(BaseEnv):
     
     def setup_goals(self, seed: int, task_num=None, start_pos=None):
         if self.maze.maze_type == "fourrooms":
-            goal_list = [(2, 2), (2, 9),
-                        (8, 8), (8, 2)]
+            goal_list = [(2, 8), (8, 2), (8, 8)]
+            
         elif self.maze.maze_type == "gridworld":
             goal_list = [(3,2), (3,7), (7, 5), (6, 8)]
         
         elif self.maze.maze_type == "fourrooms_random_layouts":
             goal_list = [
-                (2, 2), (2, self.maze.size[-1] - 3),
+                (2, self.maze.size[-1] - 3),
                 (self.maze.size[0] - 3, 2), (self.maze.size[0] - 3, self.maze.size[-1]-3)
             ]
         

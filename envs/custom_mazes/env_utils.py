@@ -78,14 +78,18 @@ def plot_value_image_fourrooms(env, dataset, value_fn, N=11, M=11, fig=None, ax=
         fig, ax = plt.subplots()
     
     coverage_map = np.where(env.maze.maze_grid == 1, -1000, env.maze.maze_grid)
+    dummy_for_saving = env.maze.maze_grid
     ax = env.plot_grid(ax=ax)
     for (x, y), value in np.ndenumerate(coverage_map):
         if value == 0:
             coverage_map[x, y] = jax.device_get(value_fn(np.concatenate([[x], [y]], -1)).max(-1)[0])
-            
+        dummy_for_saving[x, y] = jax.device_get(value_fn(np.concatenate([[x], [y]], -1)).max(-1)[0])
+    #############
+    np.save("q_func", arr=dummy_for_saving)
+    ############
     divider = make_axes_locatable(ax)
     cax = divider.append_axes('right', size='5%', pad=0.05)
-    im = ax.imshow(coverage_map - 600, cmap='inferno', vmin=-800)
+    im = ax.imshow(coverage_map - 600, cmap='inferno', vmin=-1000)
     fig.colorbar(im, cax=cax, orientation='vertical')
     goal = kwargs.get('goal', None)
     if goal is not None:

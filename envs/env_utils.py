@@ -7,7 +7,6 @@ from gymnasium.spaces import Box
 
 import ogbench
 from utils.datasets import Dataset, GCDataset
-from envs.ogbench.ant_utils import MazeVizWrapper
 
 class EpisodeMonitor(gymnasium.Wrapper):
     """Environment wrapper to monitor episode statistics."""
@@ -103,7 +102,8 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5, 
     Returns:
         A tuple of the environment, training dataset, and validation dataset.
     """
-
+    from envs.ogbench.ant_utils import MazeVizWrapper
+    
     if 'ogbench' in dataset_name:
         dataset_name = "-".join(dataset_name.split("-")[1:])
         env, train_dataset, val_dataset = ogbench.make_env_and_datasets(dataset_name, compact_dataset=False)
