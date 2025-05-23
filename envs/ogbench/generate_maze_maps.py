@@ -1,10 +1,9 @@
 import numpy as np
 import random
-from collections import deque
-# import torch
+from collections import deque 
 from tqdm import tqdm
 from typing import Optional
-
+import jax
 
 WALL = 1
 EMPTY = 0
@@ -48,11 +47,7 @@ class MapGenerator:
         self.sparsity_high = sparsity_high
         self.wall_coords = wall_coords
         self.space_coords = space_coords
-
-        if exclude_map_path is not None:
-            self.exclude_maps = torch.load(exclude_map_path)
-        else:
-            self.exclude_maps = {}
+        self.exclude_maps = {}
 
     def _bfs_longest_path(self, grid, start_row, start_col):
         rows, cols = grid.shape
@@ -365,8 +360,10 @@ class MapGenerator:
 
 
 def main():
-    map_generator = MapGenerator()
+    map_generator = MapGenerator(num_maps=10)
     maps = map_generator.generate_diverse_maps()
-
+    array_maps = jax.tree.map(parse_maze, maps)
+    np.save("pointmaze-maps", arr=array_maps)
+    
 if __name__ == "__main__":
     main()

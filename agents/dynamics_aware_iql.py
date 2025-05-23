@@ -9,7 +9,6 @@ import optax
 from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
 from utils.networks import GCActor, GCDiscreteActor, GCDiscreteCritic, GCValue
 from functools import partial
-from utils.encoders import encoder_modules
 
 
 class GCIQLAgent(flax.struct.PyTreeNode):

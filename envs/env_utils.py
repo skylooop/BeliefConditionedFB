@@ -155,7 +155,7 @@ def make_env_and_datasets(dataset_name, frame_stack=None, action_clip_eps=1e-5, 
         env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=context_len)
         eval_env = DynamicsGeneralization_Doors(render_mode="rgb_array", highlight=False, max_steps=context_len)
         env = MinigridWrapper(env)
-        train_dataset = np.load(f"/home/m_bobrin/ZeroShotRL/aux_data/doors_meta{number_of_meta_envs}_data.npy", allow_pickle=True).item() 
+        train_dataset = np.load(f"aux_data/doors_meta{number_of_meta_envs}_data.npy", allow_pickle=True).item() 
         train_dataset = Dataset.create(**train_dataset)
         val_dataset = train_dataset
     

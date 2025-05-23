@@ -307,7 +307,7 @@ def main(cfg: DictConfig):
                 eval_metrics[f'draw_policy/draw_policy_task_1_layout_ood'] = wandb.Image(pred_policy_img)
                 
                 if step > config['agent']['dyn_encoder_warmup_steps'] or step == config['agent']['dyn_encoder_warmup_steps']:
-                    for task_id in range(4): # static for 4 rooms
+                    for task_id in range(3): # static for 4 rooms
                         for env_id in range(config['agent']['number_of_meta_envs']):
                             env = FourRoomsMazeEnv(Maze(seed=env_id, maze_type='fourrooms_random_layouts'), max_steps=config['agent']['context_len'])
                             env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])
@@ -340,7 +340,7 @@ def main(cfg: DictConfig):
                         
                     eval_history_train.append(eval_metrics['evaluation/overall_episode.final_reward_train'])
                     
-                    for task_id in range(4):
+                    for task_id in range(3):
                         for env_id in range(config['agent']['number_of_meta_envs']+40, config['agent']['number_of_meta_envs'] + 60):
                             env = FourRoomsMazeEnv(Maze(seed=env_id, maze_type='fourrooms_random_layouts'), max_steps=config['agent']['context_len'])
                             env = EpisodeMonitor(env, filter_regexes=['.*privileged.*', '.*proprio.*'])

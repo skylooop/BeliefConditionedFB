@@ -2,7 +2,8 @@ from gymnasium.envs.registration import register
 import numpy as np
 from envs.ogbench.generate_maze_maps import parse_maze
 
-maps = np.load("aux_data/pointmaze-maps.npy", allow_pickle=True)[()]
+# SET TO ABSOLUTE PATH 
+maps = np.load("../aux_data/pointmaze-maps.npy", allow_pickle=True)[()]
 
 for i in range(len(maps)):
     register(

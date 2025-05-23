@@ -123,7 +123,7 @@ class DynamicsGeneralization_Doors(MiniGridEnv):
 
 class MinigridWrapper(gym.Env):
     def __init__(self, env):
-        self.env = SymbolicObsWrapper(env)
+        self.env = env #SymbolicObsWrapper(env)
         self.env.unwrapped.actions = DiscreteActions
         self.env.unwrapped.action_space = spaces.Discrete(len(self.env.unwrapped.actions))
         self.observation_space = spaces.MultiDiscrete(nvec=[self.env.unwrapped.width, self.env.unwrapped.height]).sample()

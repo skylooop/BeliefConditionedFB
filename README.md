@@ -35,12 +35,14 @@ Config management is done via Hydra.
 
 1. `agents/`: Folder containing implementations of the BFB/RFB/FB methods (Section 3.2)
 2. `notebooks`: Demonstrations of performance of different algorithms applied to benchmarks from paper (Section 4)
+	1. `vanilla_fb_doors.ipynb` (on Rnadomized Doors environment)
 	1. `vanilla_fb_4rooms.ipynb` (Performance of Vanilla Forward-Backward method on static 4Rooms)
 	2. `vanilla_fb_4rooms_randomized.ipynb` (Interference problem illustrated in Section 3.1 on Randomized 4Rooms)
 
 	3. `dynamics_fb_4rooms.ipynb` (Implementation of BFB from Section 3.2 on Randomized 4Rooms)
 	4. `dynamics_fb_doors_debug.ipynb` (Visualization of policy encoded space on custom Randomized Doors and RFB, Section 3.3)
 	5. `dynamics_fb_4rooms_rot.ipynb` (Performance of RFB on Randomized 4Rooms)
+
 
 ```
 ├── README.md              
@@ -65,8 +67,17 @@ Config management is done via Hydra.
 		└── transformer_nets.py # Implementation of permutation invariant Transformer encoder
 ```
 
+## Pointmass
+For generating random pointmass layouts, run `envs/ogbench/generate_maze_maps.py` and set `num_maps` to any number of grid layouts. The resulting dictionary of grid types will be saved as `pointmaze-maps.npy` file. 
+
+To generate dataset, run `data_gen_scripts/generate locomaze.py` for each layout.
+All visualizations and training for `pointmass` are done in `pointmass_fb.ipynb`.
+
+## AntWind
+For AntWind we provide dataset, collected by pretrained SAC for various wind directions in folder `envs/mujoco/data_custom_ant`. Visualizations for transformer context disentanglement is in `ant_wind_dynamics.ipynb`.
+
 3. `requirements.txt`: File with Python dependencies
 
 
 ## Run
-`python main.py` (with Wandb logging). If debug: `python main.py --disable_jit=True` (also disables Wandb logging)
+`python main_dynamics_discrete.py` (with Wandb logging). If debug: `python main.py --disable_jit=True` (also disables Wandb logging). Provide path to precollected dataset, saved from corresponding env in notebook (ipynb).
