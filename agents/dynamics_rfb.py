@@ -190,7 +190,7 @@ class ForwardBackwardAgent(flax.struct.PyTreeNode):
         return jnp.concatenate([w, v], axis=-1)
 
     def _nd_householder_rotation(self, anchor: jnp.ndarray) -> jnp.ndarray:
-        """Householder reflector that maps north-pole e=[1,0,..] to anchor"""
+        """Householder reflection that maps north-pole e=[1,0,..] to anchor"""
         dim = anchor.shape[-1]
         e = jnp.concatenate([jnp.ones((1,)), jnp.zeros((dim - 1,))], axis=0)
         u = e - anchor

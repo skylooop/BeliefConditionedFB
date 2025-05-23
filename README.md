@@ -74,7 +74,7 @@ To generate dataset, run `data_gen_scripts/generate locomaze.py` for each layout
 All visualizations and training for `pointmass` are done in `pointmass_fb.ipynb`.
 
 ## AntWind
-For AntWind we provide dataset, collected by pretrained SAC for various wind directions in folder `envs/mujoco/data_custom_ant`. Visualizations for transformer context disentanglement is in `ant_wind_dynamics.ipynb`.
+For AntWind we provide dataset, collected by pretrained SAC for various wind directions, which can be downloaded from [GoogleDrive](https://drive.google.com/drive/folders/1ub8KdqcjgNLZv1aX6TX5mRM6RUxC8_vi?usp=sharing) and placed in folder `envs/mujoco/data_custom_ant`. Visualizations for transformer context disentanglement is in `ant_wind_dynamics.ipynb`.
 
 3. `requirements.txt`: File with Python dependencies
 
