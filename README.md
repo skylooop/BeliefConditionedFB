@@ -1,10 +1,10 @@
-# ZeroShotRL
+# Belief-Conditioned FB
 
-*This repository provides implementations of experiments used in the paper, together with implementations of BeliefFB/RotationFB in JAX*
+*This repository contains implementation of Belief-FB/Rotation-FB in JAX presented in paper **Zero-Shot Adaptation of Behavioral Foundation Models to Unseen Dynamics***
 
 ## Environment Setup
 
-All code is written in JAX, so ensure non-conflicting versions of CUDA. 
+All code is written in JAX, so ensure non-conflicting versions of CUDA and latest version of JAX.
 Config management is done via Hydra.
 
 1. Conda Environment Setup
@@ -32,6 +32,7 @@ Config management is done via Hydra.
 ## Code Structure
 
 **Key Components:**
+The repository is structured as follows:
 
 1. `agents/`: Folder containing implementations of the BFB/RFB/FB methods (Section 3.2)
 2. `notebooks`: Demonstrations of performance of different algorithms applied to benchmarks from paper (Section 4)
@@ -78,6 +79,7 @@ For AntWind we provide dataset, collected by pretrained SAC for various wind dir
 
 3. `requirements.txt`: File with Python dependencies
 
-
 ## Run
 `python main_dynamics_discrete.py` (with Wandb logging). If debug: `python main.py --disable_jit=True` (also disables Wandb logging). Provide path to precollected dataset, saved from corresponding env in notebook (ipynb).
+
+For discrete case, select corresponding config from `configs/experiments` folder and run `python main_dynamics_discrete.py experiment=*config name*`
