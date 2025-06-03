@@ -29,6 +29,8 @@ Config management is done via Hydra.
 	export PYTHONPATH="${SRC_DIR}:${PYTHONPATH}"
 	```
 
+3. `requirements.txt`: File with Python dependencies
+
 ## Code Structure
 
 **Key Components:**
@@ -49,6 +51,8 @@ The repository is structured as follows:
 ├── README.md              
 ├── requirements.txt       # Libraries dependencies
 ├── agents/               # Main folder, contating implementations of various methods
+	├── dynamics_fb.py # Implementation of BFB from paper
+	├── dynamics_rfb.py # Implementation of RFB from paper
 ├── configs/                   # Config files used for experiments
 │   ├── agent    # hyperparameters for each method
 │   ├── env         # configs for different benchmarks
@@ -64,7 +68,7 @@ The repository is structured as follows:
         └── datasets.py     # Contains main class for Dataset creation from numpy array
 		└── evaluation.py # Different evaluation procedures based on the bench
 		└── flax_utils.py # Flexible and simple extension of flax TrainState
-		└── networks.py # Implementations of different NNs
+		└── networks.py # Implementations of different network architectures
 		└── transformer_nets.py # Implementation of permutation invariant Transformer encoder
 ```
 
@@ -76,8 +80,6 @@ All visualizations and training for `pointmass` are done in `pointmass_fb.ipynb`
 
 ## AntWind
 For AntWind we provide dataset, collected by pretrained SAC for various wind directions, which can be downloaded from [GoogleDrive](https://drive.google.com/drive/folders/1ub8KdqcjgNLZv1aX6TX5mRM6RUxC8_vi?usp=sharing) and placed in folder `envs/mujoco/data_custom_ant`. Visualizations for transformer context disentanglement is in `ant_wind_dynamics.ipynb`.
-
-3. `requirements.txt`: File with Python dependencies
 
 ## Run
 `python main_dynamics_discrete.py` (with Wandb logging). If debug: `python main.py --disable_jit=True` (also disables Wandb logging). Provide path to precollected dataset, saved from corresponding env in notebook (ipynb).
